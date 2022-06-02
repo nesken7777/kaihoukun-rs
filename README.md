@@ -3,7 +3,7 @@
 
 ## 概要
 
-これは[開放くん](http://cres.s28.xrea.com/soft/kaihoukun.html)をリバースエンジニアリングしたものをほぼそのままRustに転写したものです。
+これは[開放くん](http://cres.s28.xrea.com/soft/kaihoukun.html)をリバースエンジニアリングし、それをほぼそのままRustに転写したものです。
 
 ## ビルド方法
 Rustの環境が構築されていれば、
