@@ -37,6 +37,14 @@ const OPEN_PORT: usize = 5005;
 const CLOSE_PORT: usize = 5006;
 static mut G_HDLG: HWND = HWND(0);
 
+enum ErrorPoint {
+    CoInitializeError,
+    CoCreateInstanceError,
+    StaticPortMappingCollectionError,
+    AddError,
+    RemoveError,
+}
+
 fn main() -> Result<()> {
     unsafe {
         let instance = GetModuleHandleW(None)?;
@@ -166,19 +174,19 @@ fn open_port() {
                                                     "ポート開放に成功しました。",
                                                 );
                                             },
-                                            Err(_add_err) => unsafe {
-                                                SetDlgItemTextW(
-                                                    G_HDLG,
-                                                    OUT_TEXT,
+                                            Err(add_err) => {
+                                                err_display(
                                                     "ポート開放に失敗しました。",
+                                                    add_err,
+                                                    ErrorPoint::AddError,
                                                 );
-                                            },
+                                            }
                                         }
                                     }
                                 } else {
                                     unsafe {
                                         let lasterror = format!(
-                                            "gethostname関数失敗です。\nエラーコード:{:?}",
+                                            "gethostname関数失敗です。\r\nエラーコード:{:?}",
                                             WSAGetLastError()
                                         );
 
@@ -191,25 +199,33 @@ fn open_port() {
                                 }
                             }
                         }
-                        Err(_static_port_mapping_error) => unsafe {
-                            SetDlgItemTextW(
-                                G_HDLG,
-                                OUT_TEXT,
+                        Err(static_port_mapping_err) => {
+                            err_display(
                                 "get_StaticPortMappingCollectionに失敗しました。",
+                                static_port_mapping_err,
+                                ErrorPoint::StaticPortMappingCollectionError,
                             );
-                        },
+                        }
                     },
-                    Err(_co_create_instance_error) => unsafe {
-                        SetDlgItemTextW(G_HDLG, OUT_TEXT, "CoCreateInstanceに失敗しました。");
-                    },
+                    Err(co_create_instance_err) => {
+                        err_display(
+                            "CoCreateInstanceに失敗しました。",
+                            co_create_instance_err,
+                            ErrorPoint::CoCreateInstanceError,
+                        );
+                    }
                 }
                 unsafe {
                     CoUninitialize();
                 }
             }
-            Err(_co_initialize_error) => unsafe {
-                SetDlgItemTextW(G_HDLG, OUT_TEXT, "CoInitializeに失敗しました。");
-            },
+            Err(co_initialize_err) => {
+                err_display(
+                    "CoInitializeに失敗しました。",
+                    co_initialize_err,
+                    ErrorPoint::CoInitializeError,
+                );
+            }
         }
     }
 }
@@ -252,34 +268,61 @@ fn close_port() {
                                 Ok(()) => unsafe {
                                     SetDlgItemTextW(G_HDLG, OUT_TEXT, "ポートを閉じました。");
                                 },
-                                Err(_remove_err) => unsafe {
-                                    SetDlgItemTextW(
-                                        G_HDLG,
-                                        OUT_TEXT,
+                                Err(remove_err) => {
+                                    err_display(
                                         "ポートが閉じれませんでした。開いていますか？",
+                                        remove_err,
+                                        ErrorPoint::RemoveError,
                                     );
-                                },
+                                }
                             }
                         }
-                        Err(_static_port_mapping_collection_err) => unsafe {
-                            SetDlgItemTextW(
-                                G_HDLG,
-                                OUT_TEXT,
+                        Err(static_port_mapping_collection_err) => {
+                            err_display(
                                 "get_StaticPortMappingCollectionに失敗しました。",
+                                static_port_mapping_collection_err,
+                                ErrorPoint::StaticPortMappingCollectionError,
                             );
-                        },
+                        }
                     },
-                    Err(_co_create_instance_err) => unsafe {
-                        SetDlgItemTextW(G_HDLG, OUT_TEXT, "CoCreateInstanceに失敗しました。");
-                    },
+                    Err(co_create_instance_err) => {
+                        err_display(
+                            "CoCreateInstanceに失敗しました。",
+                            co_create_instance_err,
+                            ErrorPoint::CoCreateInstanceError,
+                        );
+                    }
                 }
                 unsafe {
                     CoUninitialize();
                 }
             }
-            Err(_co_initialize_err) => unsafe {
-                SetDlgItemTextW(G_HDLG, OUT_TEXT, "CoInitializeに失敗しました。");
-            },
+            Err(co_initialize_err) => {
+                err_display(
+                    "CoInitializeに失敗しました。",
+                    co_initialize_err,
+                    ErrorPoint::CoInitializeError,
+                );
+            }
         }
+    }
+}
+
+fn err_display(first_string: &str, error: windows::core::Error, error_point: ErrorPoint) {
+    let display_string = format!(
+        "{}\r\n\r\nエラーコード:{:?}\r\n({})\r\n詳細は{}を参照されたし。",
+        first_string,
+        error.code(),
+        error.message().to_string().trim(),
+        match error_point{
+            ErrorPoint::AddError=>"https://docs.microsoft.com/en-us/windows/win32/api/natupnp/nf-natupnp-istaticportmappingcollection-add",
+            ErrorPoint::RemoveError=>"https://docs.microsoft.com/en-us/windows/win32/api/natupnp/nf-natupnp-istaticportmappingcollection-remove",
+            ErrorPoint::CoInitializeError=>"https://docs.microsoft.com/en-us/windows/win32/api/objbase/nf-objbase-coinitialize",
+            ErrorPoint::CoCreateInstanceError=>"https://docs.microsoft.com/en-us/windows/win32/api/combaseapi/nf-combaseapi-cocreateinstance",
+            ErrorPoint::StaticPortMappingCollectionError=>"https://docs.microsoft.com/en-us/windows/win32/api/natupnp/nf-natupnp-iupnpnat-get_staticportmappingcollection",
+        },
+    );
+    unsafe {
+        SetDlgItemTextW(G_HDLG, OUT_TEXT, display_string);
     }
 }
