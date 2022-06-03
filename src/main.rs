@@ -100,117 +100,116 @@ fn open_port() {
     } else {
         let udp_check = unsafe { IsDlgButtonChecked(G_HDLG, UDP_CHECKED) };
         let tcp_or_udp_string = if udp_check != 1 { "TCP" } else { "UDP" };
-        if let Ok(()) = unsafe { CoInitialize(null()) } {
-            if let Ok(p_upnp_nat) = unsafe {
-                CoCreateInstance::<Option<_>, IUPnPNAT>(
-                    &UPnPNAT,
-                    None,
-                    CLSCTX_INPROC_SERVER
-                        | CLSCTX_INPROC_HANDLER
-                        | CLSCTX_LOCAL_SERVER
-                        | CLSCTX_REMOTE_SERVER,
-                )
-            } {
-                if let Ok(p_static_port_mapping_collection) =
-                    unsafe { p_upnp_nat.StaticPortMappingCollection() }
-                {
-                    let mut wsadata = WSAData::default();
-                    let wsaresult = unsafe { WSAStartup(0x101, &mut wsadata) };
-                    if wsaresult == 0 {
-                        let mut localhost_name = [0u8; 260];
-                        let gethostname_result =
-                            unsafe { gethostname(PSTR(localhost_name.as_mut_ptr()), 256) };
-                        if gethostname_result == 0 {
-                            let hostent_a =
-                                unsafe { gethostbyname(PCSTR(localhost_name.as_ptr())) };
-                            if hostent_a.is_null() {
-                                unsafe {
-                                    SetDlgItemTextW(
-                                        G_HDLG,
-                                        OUT_TEXT,
-                                        "gethostbyname関数失敗です。",
-                                    );
-                                }
-                            } else {
-                                let ipaddress_pstr = unsafe {
-                                    inet_ntoa(IN_ADDR {
-                                        S_un: IN_ADDR_0 {
-                                            S_addr: *((*(*hostent_a).h_addr_list) as *mut u32),
-                                        },
-                                    })
-                                };
-                                let description_bstr = BSTR::from("kaihoukun");
-                                let ipaddress_bstr = unsafe {
-                                    BSTR::from(
-                                        CStr::from_ptr(ipaddress_pstr.0 as *const i8)
-                                            .to_str()
-                                            .unwrap(),
-                                    )
-                                };
-                                let tcpudp_bstr = BSTR::from(tcp_or_udp_string);
-                                if let Ok(_) = unsafe {
-                                    p_static_port_mapping_collection.Add(
-                                        port_num as i32,
-                                        tcpudp_bstr,
-                                        port_num as i32,
-                                        ipaddress_bstr,
-                                        1,
-                                        description_bstr,
-                                    )
-                                } {
-                                    unsafe {
-                                        SetDlgItemTextW(
-                                            G_HDLG,
-                                            OUT_TEXT,
-                                            "ポート開放に成功しました。",
-                                        );
+        match unsafe { CoInitialize(null()) } {
+            Ok(()) => {
+                match unsafe {
+                    CoCreateInstance::<Option<_>, IUPnPNAT>(
+                        &UPnPNAT,
+                        None,
+                        CLSCTX_INPROC_SERVER
+                            | CLSCTX_INPROC_HANDLER
+                            | CLSCTX_LOCAL_SERVER
+                            | CLSCTX_REMOTE_SERVER,
+                    )
+                } {
+                    Ok(p_upnp_nat) => match unsafe { p_upnp_nat.StaticPortMappingCollection() } {
+                        Ok(p_static_port_mapping_collection) => {
+                            let mut wsadata = WSAData::default();
+                            let wsaresult = unsafe { WSAStartup(0x101, &mut wsadata) };
+                            if wsaresult == 0 {
+                                let mut localhost_name = [0u8; 260];
+                                let gethostname_result =
+                                    unsafe { gethostname(PSTR(localhost_name.as_mut_ptr()), 256) };
+                                if gethostname_result == 0 {
+                                    let hostent_a =
+                                        unsafe { gethostbyname(PCSTR(localhost_name.as_ptr())) };
+                                    if hostent_a.is_null() {
+                                        unsafe {
+                                            SetDlgItemTextW(
+                                                G_HDLG,
+                                                OUT_TEXT,
+                                                "gethostbyname関数失敗です。",
+                                            );
+                                        }
+                                    } else {
+                                        let ipaddress_pstr = unsafe {
+                                            inet_ntoa(IN_ADDR {
+                                                S_un: IN_ADDR_0 {
+                                                    S_addr: *((*(*hostent_a).h_addr_list)
+                                                        as *mut u32),
+                                                },
+                                            })
+                                        };
+                                        let description_bstr = BSTR::from("kaihoukun");
+                                        let ipaddress_bstr = unsafe {
+                                            BSTR::from(
+                                                CStr::from_ptr(ipaddress_pstr.0 as *const i8)
+                                                    .to_str()
+                                                    .unwrap(),
+                                            )
+                                        };
+                                        let tcpudp_bstr = BSTR::from(tcp_or_udp_string);
+                                        match unsafe {
+                                            p_static_port_mapping_collection.Add(
+                                                port_num as i32,
+                                                tcpudp_bstr,
+                                                port_num as i32,
+                                                ipaddress_bstr,
+                                                1,
+                                                description_bstr,
+                                            )
+                                        } {
+                                            Ok(_) => unsafe {
+                                                SetDlgItemTextW(
+                                                    G_HDLG,
+                                                    OUT_TEXT,
+                                                    "ポート開放に成功しました。",
+                                                );
+                                            },
+                                            Err(_add_err) => unsafe {
+                                                SetDlgItemTextW(
+                                                    G_HDLG,
+                                                    OUT_TEXT,
+                                                    "ポート開放に失敗しました。",
+                                                );
+                                            },
+                                        }
                                     }
                                 } else {
                                     unsafe {
-                                        SetDlgItemTextW(
-                                            G_HDLG,
-                                            OUT_TEXT,
-                                            "ポート開放に失敗しました。",
+                                        let lasterror = format!(
+                                            "gethostname関数失敗です。\nエラーコード:{:?}",
+                                            WSAGetLastError()
                                         );
+
+                                        SetDlgItemTextW(G_HDLG, OUT_TEXT, lasterror);
                                     }
                                 }
-                            }
-                        } else {
-                            unsafe {
-                                let lasterror = format!(
-                                    "gethostname関数失敗です。\nエラーコード:{:?}",
-                                    WSAGetLastError()
-                                );
-
-                                SetDlgItemTextW(G_HDLG, OUT_TEXT, lasterror);
+                            } else {
+                                unsafe {
+                                    SetDlgItemTextW(G_HDLG, OUT_TEXT, "WSAStartup関数失敗です。");
+                                }
                             }
                         }
-                    } else {
-                        unsafe {
-                            SetDlgItemTextW(G_HDLG, OUT_TEXT, "WSAStartup関数失敗です。");
-                        }
-                    }
-                } else {
-                    unsafe {
-                        SetDlgItemTextW(
-                            G_HDLG,
-                            OUT_TEXT,
-                            "get_StaticPortMappingCollectionに失敗しました。",
-                        );
-                    }
+                        Err(_static_port_mapping_error) => unsafe {
+                            SetDlgItemTextW(
+                                G_HDLG,
+                                OUT_TEXT,
+                                "get_StaticPortMappingCollectionに失敗しました。",
+                            );
+                        },
+                    },
+                    Err(_co_create_instance_error) => unsafe {
+                        SetDlgItemTextW(G_HDLG, OUT_TEXT, "CoCreateInstanceに失敗しました。");
+                    },
                 }
-            } else {
                 unsafe {
-                    SetDlgItemTextW(G_HDLG, OUT_TEXT, "CoCreateInstanceに失敗しました。");
+                    CoUninitialize();
                 }
             }
-            unsafe {
-                CoUninitialize();
-            }
-        } else {
-            unsafe {
+            Err(_co_initialize_error) => unsafe {
                 SetDlgItemTextW(G_HDLG, OUT_TEXT, "CoInitializeに失敗しました。");
-            }
+            },
         }
     }
 }
@@ -232,57 +231,55 @@ fn close_port() {
     } else {
         let udp_check = unsafe { IsDlgButtonChecked(G_HDLG, UDP_CHECKED) };
         let tcp_or_udp_string = if udp_check != 1 { "TCP" } else { "UDP" };
-        if let Ok(()) = unsafe { CoInitialize(null()) } {
-            if let Ok(p_upnp_nat) = unsafe {
-                CoCreateInstance::<Option<_>, IUPnPNAT>(
-                    &UPnPNAT,
-                    None,
-                    CLSCTX_INPROC_SERVER
-                        | CLSCTX_INPROC_HANDLER
-                        | CLSCTX_LOCAL_SERVER
-                        | CLSCTX_REMOTE_SERVER,
-                )
-            } {
-                if let Ok(p_static_port_mapping_collection) =
-                    unsafe { p_upnp_nat.StaticPortMappingCollection() }
-                {
-                    if let Ok(()) = unsafe {
-                        p_static_port_mapping_collection
-                            .Remove(port_num as i32, BSTR::from(tcp_or_udp_string))
-                    } {
-                        unsafe {
-                            SetDlgItemTextW(G_HDLG, OUT_TEXT, "ポートを閉じました。");
+        match unsafe { CoInitialize(null()) } {
+            Ok(()) => {
+                match unsafe {
+                    CoCreateInstance::<Option<_>, IUPnPNAT>(
+                        &UPnPNAT,
+                        None,
+                        CLSCTX_INPROC_SERVER
+                            | CLSCTX_INPROC_HANDLER
+                            | CLSCTX_LOCAL_SERVER
+                            | CLSCTX_REMOTE_SERVER,
+                    )
+                } {
+                    Ok(p_upnp_nat) => match unsafe { p_upnp_nat.StaticPortMappingCollection() } {
+                        Ok(p_static_port_mapping_collection) => {
+                            match unsafe {
+                                p_static_port_mapping_collection
+                                    .Remove(port_num as i32, BSTR::from(tcp_or_udp_string))
+                            } {
+                                Ok(()) => unsafe {
+                                    SetDlgItemTextW(G_HDLG, OUT_TEXT, "ポートを閉じました。");
+                                },
+                                Err(_remove_err) => unsafe {
+                                    SetDlgItemTextW(
+                                        G_HDLG,
+                                        OUT_TEXT,
+                                        "ポートが閉じれませんでした。開いていますか？",
+                                    );
+                                },
+                            }
                         }
-                    } else {
-                        unsafe {
+                        Err(_static_port_mapping_collection_err) => unsafe {
                             SetDlgItemTextW(
                                 G_HDLG,
                                 OUT_TEXT,
-                                "ポートが閉じれませんでした。開いていますか？",
+                                "get_StaticPortMappingCollectionに失敗しました。",
                             );
-                        }
-                    }
-                } else {
-                    unsafe {
-                        SetDlgItemTextW(
-                            G_HDLG,
-                            OUT_TEXT,
-                            "get_StaticPortMappingCollectionに失敗しました。",
-                        );
-                    }
+                        },
+                    },
+                    Err(_co_create_instance_err) => unsafe {
+                        SetDlgItemTextW(G_HDLG, OUT_TEXT, "CoCreateInstanceに失敗しました。");
+                    },
                 }
-            } else {
                 unsafe {
-                    SetDlgItemTextW(G_HDLG, OUT_TEXT, "CoCreateInstanceに失敗しました。");
+                    CoUninitialize();
                 }
             }
-            unsafe {
-                CoUninitialize();
-            }
-        } else {
-            unsafe {
+            Err(_co_initialize_err) => unsafe {
                 SetDlgItemTextW(G_HDLG, OUT_TEXT, "CoInitializeに失敗しました。");
-            }
+            },
         }
     }
 }
