@@ -165,10 +165,10 @@ fn open_port() {
                                     } else {
                                         let mut ptr = addr_info;
 
-                                        let ip_string = {
-                                            let mut ip_return_string = String::new();
+                                        let ip_slice = {
+                                            let mut ip_return_slice = [0u16; 0].as_slice();
                                             let mut lpstringbuffer = [0u16; 46];
-                                            while !ptr.is_null() && ip_return_string.is_empty() {
+                                            while !ptr.is_null() && ip_return_slice.is_empty() {
                                                 match unsafe {
                                                     ADDRESS_FAMILY(((*ptr).ai_family) as u32)
                                                 } {
@@ -185,20 +185,18 @@ fn open_port() {
                                                             )
                                                             .0
                                                         };
-                                                        ip_return_string = unsafe {
-                                                            String::from_utf16_lossy(
-                                                                core::slice::from_raw_parts(
-                                                                    ip_utf16_ptr,
-                                                                    {
-                                                                        let mut i = 0;
-                                                                        let mut p = ip_utf16_ptr;
-                                                                        while *p != 0 {
-                                                                            p = p.add(1);
-                                                                            i += 1;
-                                                                        }
-                                                                        i
-                                                                    },
-                                                                ),
+                                                        ip_return_slice = unsafe {
+                                                            core::slice::from_raw_parts(
+                                                                ip_utf16_ptr,
+                                                                {
+                                                                    let mut i = 0;
+                                                                    let mut p = ip_utf16_ptr;
+                                                                    while *p != 0 {
+                                                                        p = p.add(1);
+                                                                        i += 1;
+                                                                    }
+                                                                    i
+                                                                },
                                                             )
                                                         };
                                                     }
@@ -206,14 +204,14 @@ fn open_port() {
                                                 }
                                                 ptr = unsafe { (*ptr).ai_next };
                                             }
-                                            ip_return_string
+                                            ip_return_slice
                                         };
                                         match unsafe {
                                             p_static_port_mapping_collection.Add(
                                                 port_num as i32,
                                                 tcp_or_udp_string,
                                                 port_num as i32,
-                                                ip_string,
+                                                BSTR::from_wide(ip_slice),
                                                 1,
                                                 "kaihoukun",
                                             )
