@@ -6,13 +6,15 @@ use windows::{
         Foundation::{BOOL, BSTR, HWND, LPARAM, WPARAM},
         NetworkManagement::WindowsFirewall::{IUPnPNAT, UPnPNAT},
         Networking::WinSock::{
-            gethostbyname, gethostname, inet_ntoa, WSAData, WSAGetLastError, WSAStartup, IN_ADDR,
-            IN_ADDR_0,
+            addrinfoexW, GetAddrInfoExW, GetHostNameW, InetNtopW, WSACleanup, WSAData,
+            WSAGetLastError, WSAStartup, ADDRESS_FAMILY, AF_INET, IN_ADDR, NS_DNS, SOCKADDR_IN,
+            SOCK_RAW,
         },
         System::{
             Com::{
-                CoCreateInstance, CoInitialize, CoUninitialize, CLSCTX_INPROC_HANDLER,
+                CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_HANDLER,
                 CLSCTX_INPROC_SERVER, CLSCTX_LOCAL_SERVER, CLSCTX_REMOTE_SERVER,
+                COINIT_MULTITHREADED,
             },
             LibraryLoader::GetModuleHandleW,
         },
@@ -26,7 +28,10 @@ use windows::{
     },
 };
 
-use std::{ffi::CStr, ptr::null};
+use std::{
+    ffi::c_void,
+    ptr::{null, null_mut},
+};
 
 const DIALOG: usize = 4000;
 const PORT_NUM_INPUT: i32 = 5001;
@@ -108,7 +113,7 @@ fn open_port() {
     } else {
         let udp_check = unsafe { IsDlgButtonChecked(G_HDLG, UDP_CHECKED) };
         let tcp_or_udp_string = if udp_check != 1 { "TCP" } else { "UDP" };
-        match unsafe { CoInitialize(null()) } {
+        match unsafe { CoInitializeEx(null(), COINIT_MULTITHREADED) } {
             Ok(()) => {
                 match unsafe {
                     CoCreateInstance::<Option<_>, IUPnPNAT>(
@@ -123,15 +128,33 @@ fn open_port() {
                     Ok(p_upnp_nat) => match unsafe { p_upnp_nat.StaticPortMappingCollection() } {
                         Ok(p_static_port_mapping_collection) => {
                             let mut wsadata = WSAData::default();
-                            let wsaresult = unsafe { WSAStartup(0x101, &mut wsadata) };
+                            let wsaresult = unsafe { WSAStartup(0x202, &mut wsadata) };
                             if wsaresult == 0 {
-                                let mut localhost_name = [0u8; 260];
+                                let mut localhost_name = [0u16; 260];
                                 let gethostname_result =
-                                    unsafe { gethostname(PSTR(localhost_name.as_mut_ptr()), 256) };
+                                    unsafe { GetHostNameW(localhost_name.as_mut_slice()) };
                                 if gethostname_result == 0 {
-                                    let hostent_a =
-                                        unsafe { gethostbyname(PCSTR(localhost_name.as_ptr())) };
-                                    if hostent_a.is_null() {
+                                    let hints = addrinfoexW {
+                                        ai_family: AF_INET.0 as i32,
+                                        ai_socktype: SOCK_RAW as i32,
+                                        ..Default::default()
+                                    };
+                                    let mut addr_info: *mut addrinfoexW = null_mut();
+                                    let dw_retval = unsafe {
+                                        GetAddrInfoExW(
+                                            PCWSTR(localhost_name.as_ptr()),
+                                            "7",
+                                            NS_DNS,
+                                            null(),
+                                            &hints,
+                                            &mut addr_info,
+                                            null(),
+                                            null(),
+                                            None,
+                                            null_mut(),
+                                        )
+                                    };
+                                    if dw_retval != 0 {
                                         unsafe {
                                             SetDlgItemTextW(
                                                 G_HDLG,
@@ -140,31 +163,59 @@ fn open_port() {
                                             );
                                         }
                                     } else {
-                                        let ipaddress_pstr = unsafe {
-                                            inet_ntoa(IN_ADDR {
-                                                S_un: IN_ADDR_0 {
-                                                    S_addr: *((*(*hostent_a).h_addr_list)
-                                                        as *mut u32),
-                                                },
-                                            })
+                                        let mut ptr = addr_info;
+
+                                        let ip_string = {
+                                            let mut ip_return_string = String::new();
+                                            let mut lpstringbuffer = [0u16; 46];
+                                            while !ptr.is_null() && ip_return_string.is_empty() {
+                                                match unsafe {
+                                                    ADDRESS_FAMILY(((*ptr).ai_family) as u32)
+                                                } {
+                                                    AF_INET => {
+                                                        let ip_utf16_ptr = unsafe {
+                                                            InetNtopW(
+                                                                AF_INET.0 as i32,
+                                                                (&(*((*ptr).ai_addr
+                                                                    as *mut SOCKADDR_IN))
+                                                                    .sin_addr)
+                                                                    as *const IN_ADDR
+                                                                    as *const c_void,
+                                                                &mut lpstringbuffer,
+                                                            )
+                                                            .0
+                                                        };
+                                                        ip_return_string = unsafe {
+                                                            String::from_utf16_lossy(
+                                                                core::slice::from_raw_parts(
+                                                                    ip_utf16_ptr,
+                                                                    {
+                                                                        let mut i = 0;
+                                                                        let mut p = ip_utf16_ptr;
+                                                                        while *p != 0 {
+                                                                            p = p.add(1);
+                                                                            i += 1;
+                                                                        }
+                                                                        i
+                                                                    },
+                                                                ),
+                                                            )
+                                                        };
+                                                    }
+                                                    _ => {}
+                                                }
+                                                ptr = unsafe { (*ptr).ai_next };
+                                            }
+                                            ip_return_string
                                         };
-                                        let description_bstr = BSTR::from("kaihoukun");
-                                        let ipaddress_bstr = unsafe {
-                                            BSTR::from(
-                                                CStr::from_ptr(ipaddress_pstr.0 as *const i8)
-                                                    .to_str()
-                                                    .unwrap(),
-                                            )
-                                        };
-                                        let tcpudp_bstr = BSTR::from(tcp_or_udp_string);
                                         match unsafe {
                                             p_static_port_mapping_collection.Add(
                                                 port_num as i32,
-                                                tcpudp_bstr,
+                                                tcp_or_udp_string,
                                                 port_num as i32,
-                                                ipaddress_bstr,
+                                                ip_string,
                                                 1,
-                                                description_bstr,
+                                                "kaihoukun",
                                             )
                                         } {
                                             Ok(_) => unsafe {
@@ -192,6 +243,9 @@ fn open_port() {
 
                                         SetDlgItemTextW(G_HDLG, OUT_TEXT, lasterror);
                                     }
+                                }
+                                unsafe {
+                                    WSACleanup();
                                 }
                             } else {
                                 unsafe {
@@ -247,7 +301,7 @@ fn close_port() {
     } else {
         let udp_check = unsafe { IsDlgButtonChecked(G_HDLG, UDP_CHECKED) };
         let tcp_or_udp_string = if udp_check != 1 { "TCP" } else { "UDP" };
-        match unsafe { CoInitialize(null()) } {
+        match unsafe { CoInitializeEx(null(), COINIT_MULTITHREADED) } {
             Ok(()) => {
                 match unsafe {
                     CoCreateInstance::<Option<_>, IUPnPNAT>(
