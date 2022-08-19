@@ -6,9 +6,8 @@ use windows::{
         Foundation::{BOOL, BSTR, HWND, LPARAM, WPARAM},
         NetworkManagement::WindowsFirewall::{IUPnPNAT, UPnPNAT},
         Networking::WinSock::{
-            addrinfoexW, GetAddrInfoExW, GetHostNameW, InetNtopW, WSACleanup, WSAData,
-            WSAGetLastError, WSAStartup, ADDRESS_FAMILY, AF_INET, IN_ADDR, NS_DNS, SOCKADDR_IN,
-            SOCK_RAW,
+            addrinfoexW, GetAddrInfoExW, GetHostNameW, WSACleanup, WSAData, WSAGetLastError,
+            WSAStartup, ADDRESS_FAMILY, AF_INET, NS_DNS, SOCKADDR_IN, SOCK_RAW,
         },
         System::{
             Com::{
@@ -28,10 +27,7 @@ use windows::{
     },
 };
 
-use std::{
-    ffi::c_void,
-    ptr::{null, null_mut},
-};
+use std::ptr::{null, null_mut};
 
 const DIALOG: usize = 4000;
 const PORT_NUM_INPUT: i32 = 5001;
@@ -108,7 +104,7 @@ fn open_port() {
     };
     if get_port_check == BOOL::from(false) || port_num <= 0 || port_num > 65535 {
         unsafe {
-            SetDlgItemTextW(G_HDLG, OUT_TEXT, "ポート番号が不正です");
+            SetDlgItemTextW(G_HDLG, OUT_TEXT, w!("ポート番号が不正です"));
         }
     } else {
         let udp_check = unsafe { IsDlgButtonChecked(G_HDLG, UDP_CHECKED) };
@@ -143,7 +139,7 @@ fn open_port() {
                                     let dw_retval = unsafe {
                                         GetAddrInfoExW(
                                             PCWSTR(localhost_name.as_ptr()),
-                                            "7",
+                                            w!("7"),
                                             NS_DNS,
                                             null(),
                                             &hints,
@@ -159,68 +155,49 @@ fn open_port() {
                                             SetDlgItemTextW(
                                                 G_HDLG,
                                                 OUT_TEXT,
-                                                "gethostbyname関数失敗です。",
+                                                w!("gethostbyname関数失敗です。"),
                                             );
                                         }
                                     } else {
                                         let mut ptr = addr_info;
 
-                                        let ip_slice = {
-                                            let mut ip_return_slice = [0u16; 0].as_slice();
-                                            let mut lpstringbuffer = [0u16; 46];
-                                            while !ptr.is_null() && ip_return_slice.is_empty() {
+                                        let ip_str = {
+                                            let mut return_str = String::with_capacity(64);
+                                            while !ptr.is_null() && return_str.is_empty() {
                                                 match unsafe {
                                                     ADDRESS_FAMILY(((*ptr).ai_family) as u32)
                                                 } {
                                                     AF_INET => {
-                                                        let ip_utf16_ptr = unsafe {
-                                                            InetNtopW(
-                                                                AF_INET.0 as i32,
-                                                                (&(*((*ptr).ai_addr
+                                                        return_str = unsafe {
+                                                            std::net::Ipv4Addr::from(
+                                                                (*((*ptr).ai_addr
                                                                     as *mut SOCKADDR_IN))
-                                                                    .sin_addr)
-                                                                    as *const IN_ADDR
-                                                                    as *const c_void,
-                                                                &mut lpstringbuffer,
+                                                                    .sin_addr,
                                                             )
-                                                            .0
-                                                        };
-                                                        ip_return_slice = unsafe {
-                                                            core::slice::from_raw_parts(
-                                                                ip_utf16_ptr,
-                                                                {
-                                                                    let mut i = 0;
-                                                                    let mut p = ip_utf16_ptr;
-                                                                    while *p != 0 {
-                                                                        p = p.add(1);
-                                                                        i += 1;
-                                                                    }
-                                                                    i
-                                                                },
-                                                            )
+                                                            .to_string()
                                                         };
                                                     }
                                                     _ => {}
                                                 }
                                                 ptr = unsafe { (*ptr).ai_next };
                                             }
-                                            ip_return_slice
+                                            return_str
                                         };
                                         match unsafe {
                                             p_static_port_mapping_collection.Add(
                                                 port_num as i32,
-                                                tcp_or_udp_string,
+                                                &BSTR::from(tcp_or_udp_string),
                                                 port_num as i32,
-                                                BSTR::from_wide(ip_slice),
+                                                &BSTR::from(ip_str),
                                                 1,
-                                                "kaihoukun",
+                                                &BSTR::from("kaihoukun"),
                                             )
                                         } {
                                             Ok(_) => unsafe {
                                                 SetDlgItemTextW(
                                                     G_HDLG,
                                                     OUT_TEXT,
-                                                    "ポート開放に成功しました。",
+                                                    w!("ポート開放に成功しました。"),
                                                 );
                                             },
                                             Err(add_err) => {
@@ -239,7 +216,11 @@ fn open_port() {
                                             WSAGetLastError()
                                         );
 
-                                        SetDlgItemTextW(G_HDLG, OUT_TEXT, lasterror);
+                                        SetDlgItemTextW(
+                                            G_HDLG,
+                                            OUT_TEXT,
+                                            PCWSTR::from(&HSTRING::from(&lasterror)),
+                                        );
                                     }
                                 }
                                 unsafe {
@@ -247,7 +228,11 @@ fn open_port() {
                                 }
                             } else {
                                 unsafe {
-                                    SetDlgItemTextW(G_HDLG, OUT_TEXT, "WSAStartup関数失敗です。");
+                                    SetDlgItemTextW(
+                                        G_HDLG,
+                                        OUT_TEXT,
+                                        w!("WSAStartup関数失敗です。"),
+                                    );
                                 }
                             }
                         }
@@ -294,7 +279,7 @@ fn close_port() {
     };
     if get_port_check == BOOL::from(false) || port_num <= 0 || port_num > 65535 {
         unsafe {
-            SetDlgItemTextW(G_HDLG, OUT_TEXT, "ポート番号が不正です");
+            SetDlgItemTextW(G_HDLG, OUT_TEXT, w!("ポート番号が不正です"));
         }
     } else {
         let udp_check = unsafe { IsDlgButtonChecked(G_HDLG, UDP_CHECKED) };
@@ -315,10 +300,10 @@ fn close_port() {
                         Ok(p_static_port_mapping_collection) => {
                             match unsafe {
                                 p_static_port_mapping_collection
-                                    .Remove(port_num as i32, BSTR::from(tcp_or_udp_string))
+                                    .Remove(port_num as i32, &BSTR::from(tcp_or_udp_string))
                             } {
                                 Ok(()) => unsafe {
-                                    SetDlgItemTextW(G_HDLG, OUT_TEXT, "ポートを閉じました。");
+                                    SetDlgItemTextW(G_HDLG, OUT_TEXT, w!("ポートを閉じました。"));
                                 },
                                 Err(remove_err) => {
                                     err_display(
@@ -375,6 +360,10 @@ fn err_display(first_string: &str, error: windows::core::Error, error_point: Err
         },
     );
     unsafe {
-        SetDlgItemTextW(G_HDLG, OUT_TEXT, display_string);
+        SetDlgItemTextW(
+            G_HDLG,
+            OUT_TEXT,
+            PCWSTR::from(&HSTRING::from(&display_string)),
+        );
     }
 }
