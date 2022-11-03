@@ -3,11 +3,11 @@
 use windows::{
     core::*,
     Win32::{
-        Foundation::{BOOL, BSTR, HWND, LPARAM, WPARAM},
+        Foundation::{BOOL, HWND, LPARAM, WPARAM},
         NetworkManagement::WindowsFirewall::{IUPnPNAT, UPnPNAT},
         Networking::WinSock::{
-            addrinfoexW, GetAddrInfoExW, GetHostNameW, WSACleanup, WSAData, WSAGetLastError,
-            WSAStartup, ADDRESS_FAMILY, AF_INET, NS_DNS, SOCKADDR_IN, SOCK_RAW,
+            GetAddrInfoExW, GetHostNameW, WSACleanup, WSAStartup, ADDRESS_FAMILY, ADDRINFOEXW,
+            AF_INET, NS_DNS, SOCKADDR_IN, SOCK_RAW, WSADATA,
         },
         System::{
             Com::{
@@ -27,7 +27,7 @@ use windows::{
     },
 };
 
-use std::ptr::{null, null_mut};
+use std::ptr::null_mut;
 
 const DIALOG: usize = 4000;
 const PORT_NUM_INPUT: i32 = 5001;
@@ -38,20 +38,26 @@ const OPEN_PORT: usize = 5005;
 const CLOSE_PORT: usize = 5006;
 static mut G_HDLG: HWND = HWND(0);
 
-enum ErrorPoint {
-    CoInitializeError,
-    CoCreateInstanceError,
-    StaticPortMappingCollectionError,
-    AddError,
-    RemoveError,
+enum ErrorKind {
+    InvalidPortNumber,
+    WSAStartupFail,
+    GetAddrInfoExWFail,
+    GetHostNameWFail,
+    CoInitializeFail,
+    CoCreateInstanceFail,
+    StaticPortMappingCollectionFail,
+    AddFail,
+    RemoveFail,
 }
+
+use ErrorKind::*;
 
 fn main() -> Result<()> {
     unsafe {
         let instance = GetModuleHandleW(None)?;
         DialogBoxParamW(
             instance,
-            PCWSTR(DIALOG as *const u16),
+            PCWSTR::from_raw(DIALOG as *const u16),
             HWND(0),
             Some(dlg_proc),
             LPARAM(0),
@@ -77,14 +83,26 @@ unsafe extern "system" fn dlg_proc(
                 EndDialog(window_handle, 2);
                 0
             }
-            OPEN_PORT => {
-                open_port();
-                0
-            }
-            CLOSE_PORT => {
-                close_port();
-                0
-            }
+            OPEN_PORT => open_port().map_or_else(
+                |(win_error, error_kind)| {
+                    display_err(win_error, error_kind);
+                    0
+                },
+                |_| {
+                    SetDlgItemTextW(G_HDLG, OUT_TEXT, w!("ポート開放に成功しました。"));
+                    1
+                },
+            ),
+            CLOSE_PORT => close_port().map_or_else(
+                |(win_error, error_kind)| {
+                    display_err(win_error, error_kind);
+                    0
+                },
+                |_| {
+                    SetDlgItemTextW(G_HDLG, OUT_TEXT, w!("ポートを閉じました。"));
+                    1
+                },
+            ),
 
             _ => 0,
         },
@@ -92,278 +110,227 @@ unsafe extern "system" fn dlg_proc(
     }
 }
 
-fn open_port() {
+fn open_port() -> std::result::Result<(), (Error, ErrorKind)> {
     let mut get_port_check = BOOL::default();
     let port_num = unsafe {
         GetDlgItemInt(
             G_HDLG,
             PORT_NUM_INPUT,
-            &mut get_port_check,
+            Some(&mut get_port_check),
             BOOL::from(false),
         )
     };
     if get_port_check == BOOL::from(false) || port_num <= 0 || port_num > 65535 {
-        unsafe {
-            SetDlgItemTextW(G_HDLG, OUT_TEXT, w!("ポート番号が不正です"));
-        }
-    } else {
-        let udp_check = unsafe { IsDlgButtonChecked(G_HDLG, UDP_CHECKED) };
-        let tcp_or_udp_string = if udp_check != 1 { "TCP" } else { "UDP" };
-        match unsafe { CoInitializeEx(null(), COINIT_MULTITHREADED) } {
-            Ok(()) => {
-                match unsafe {
-                    CoCreateInstance::<Option<_>, IUPnPNAT>(
-                        &UPnPNAT,
-                        None,
-                        CLSCTX_INPROC_SERVER
-                            | CLSCTX_INPROC_HANDLER
-                            | CLSCTX_LOCAL_SERVER
-                            | CLSCTX_REMOTE_SERVER,
-                    )
-                } {
-                    Ok(p_upnp_nat) => match unsafe { p_upnp_nat.StaticPortMappingCollection() } {
-                        Ok(p_static_port_mapping_collection) => {
-                            let mut wsadata = WSAData::default();
-                            let wsaresult = unsafe { WSAStartup(0x202, &mut wsadata) };
-                            if wsaresult == 0 {
-                                let mut localhost_name = [0u16; 260];
-                                let gethostname_result =
-                                    unsafe { GetHostNameW(localhost_name.as_mut_slice()) };
-                                if gethostname_result == 0 {
-                                    let hints = addrinfoexW {
-                                        ai_family: AF_INET.0 as i32,
-                                        ai_socktype: SOCK_RAW as i32,
-                                        ..Default::default()
-                                    };
-                                    let mut addr_info: *mut addrinfoexW = null_mut();
-                                    let dw_retval = unsafe {
-                                        GetAddrInfoExW(
-                                            PCWSTR(localhost_name.as_ptr()),
-                                            w!("7"),
-                                            NS_DNS,
-                                            null(),
-                                            &hints,
-                                            &mut addr_info,
-                                            null(),
-                                            null(),
-                                            None,
-                                            null_mut(),
-                                        )
-                                    };
-                                    if dw_retval != 0 {
-                                        unsafe {
-                                            SetDlgItemTextW(
-                                                G_HDLG,
-                                                OUT_TEXT,
-                                                w!("gethostbyname関数失敗です。"),
-                                            );
-                                        }
-                                    } else {
-                                        let mut ptr = addr_info;
-
-                                        let ip_str = {
-                                            let mut return_str = String::with_capacity(64);
-                                            while !ptr.is_null() && return_str.is_empty() {
-                                                match unsafe {
-                                                    ADDRESS_FAMILY(((*ptr).ai_family) as u32)
-                                                } {
-                                                    AF_INET => {
-                                                        return_str = unsafe {
-                                                            std::net::Ipv4Addr::from(
-                                                                (*((*ptr).ai_addr
-                                                                    as *mut SOCKADDR_IN))
-                                                                    .sin_addr,
-                                                            )
-                                                            .to_string()
-                                                        };
-                                                    }
-                                                    _ => {}
-                                                }
-                                                ptr = unsafe { (*ptr).ai_next };
-                                            }
-                                            return_str
-                                        };
-                                        match unsafe {
-                                            p_static_port_mapping_collection.Add(
-                                                port_num as i32,
-                                                &BSTR::from(tcp_or_udp_string),
-                                                port_num as i32,
-                                                &BSTR::from(ip_str),
-                                                1,
-                                                &BSTR::from("kaihoukun"),
-                                            )
-                                        } {
-                                            Ok(_) => unsafe {
-                                                SetDlgItemTextW(
-                                                    G_HDLG,
-                                                    OUT_TEXT,
-                                                    w!("ポート開放に成功しました。"),
-                                                );
-                                            },
-                                            Err(add_err) => {
-                                                err_display(
-                                                    "ポート開放に失敗しました。",
-                                                    add_err,
-                                                    ErrorPoint::AddError,
-                                                );
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    unsafe {
-                                        let lasterror = format!(
-                                            "gethostname関数失敗です。\r\nエラーコード:{:?}",
-                                            WSAGetLastError()
-                                        );
-
-                                        SetDlgItemTextW(
-                                            G_HDLG,
-                                            OUT_TEXT,
-                                            PCWSTR::from(&HSTRING::from(&lasterror)),
-                                        );
-                                    }
-                                }
-                                unsafe {
-                                    WSACleanup();
-                                }
-                            } else {
-                                unsafe {
-                                    SetDlgItemTextW(
-                                        G_HDLG,
-                                        OUT_TEXT,
-                                        w!("WSAStartup関数失敗です。"),
-                                    );
-                                }
-                            }
-                        }
-                        Err(static_port_mapping_err) => {
-                            err_display(
-                                "get_StaticPortMappingCollectionに失敗しました。",
-                                static_port_mapping_err,
-                                ErrorPoint::StaticPortMappingCollectionError,
-                            );
-                        }
-                    },
-                    Err(co_create_instance_err) => {
-                        err_display(
-                            "CoCreateInstanceに失敗しました。",
-                            co_create_instance_err,
-                            ErrorPoint::CoCreateInstanceError,
-                        );
-                    }
-                }
-                unsafe {
-                    CoUninitialize();
-                }
-            }
-            Err(co_initialize_err) => {
-                err_display(
-                    "CoInitializeに失敗しました。",
-                    co_initialize_err,
-                    ErrorPoint::CoInitializeError,
-                );
-            }
-        }
+        return Err((Error::OK, InvalidPortNumber));
     }
+    let udp_check = unsafe { IsDlgButtonChecked(G_HDLG, UDP_CHECKED) };
+    let tcp_or_udp_string = if udp_check != 1 { "TCP" } else { "UDP" };
+    unsafe {
+        CoInitializeEx(None, COINIT_MULTITHREADED)
+            .map_err(|co_init_err| (co_init_err, CoInitializeFail))?
+    };
+    let upnp_nat = unsafe {
+        CoCreateInstance::<_, IUPnPNAT>(
+            &UPnPNAT,
+            None,
+            CLSCTX_INPROC_SERVER
+                | CLSCTX_INPROC_HANDLER
+                | CLSCTX_LOCAL_SERVER
+                | CLSCTX_REMOTE_SERVER,
+        )
+        .map_err(|co_create_instance_err| (co_create_instance_err, CoCreateInstanceFail))?
+    };
+    let static_port_mapping_collection = unsafe {
+        upnp_nat
+            .StaticPortMappingCollection()
+            .map_err(|static_port_mapping_collection_err| {
+                (
+                    static_port_mapping_collection_err,
+                    StaticPortMappingCollectionFail,
+                )
+            })?
+    };
+
+    let mut wsa_data = WSADATA::default();
+    let wsaresult = unsafe { WSAStartup(0x202, &mut wsa_data) };
+    if wsaresult != 0 {
+        return Err((Error::OK, WSAStartupFail));
+    }
+
+    let mut localhost_name = [0u16; 260];
+    let gethostname_result = unsafe { GetHostNameW(localhost_name.as_mut_slice()) };
+    if gethostname_result != 0 {
+        return Err((Error::OK, GetHostNameWFail));
+    }
+
+    let hints = ADDRINFOEXW {
+        ai_family: AF_INET.0 as i32,
+        ai_socktype: SOCK_RAW as i32,
+        ..Default::default()
+    };
+    let mut addr_info: *mut ADDRINFOEXW = null_mut();
+    let dw_retval = unsafe {
+        GetAddrInfoExW(
+            PCWSTR::from_raw(localhost_name.as_ptr()),
+            w!("7"),
+            NS_DNS,
+            None,
+            Some(&hints),
+            &mut addr_info,
+            None,
+            None,
+            None,
+            None,
+        )
+    };
+    if dw_retval != 0 {
+        return Err((Error::OK, GetAddrInfoExWFail));
+    }
+    let mut ptr = addr_info;
+
+    let ip_str = {
+        let mut return_str = String::with_capacity(64);
+        while !ptr.is_null() && return_str.is_empty() {
+            match unsafe { ADDRESS_FAMILY(((*ptr).ai_family) as u32) } {
+                AF_INET => {
+                    return_str = unsafe {
+                        std::net::Ipv4Addr::from((*((*ptr).ai_addr as *mut SOCKADDR_IN)).sin_addr)
+                            .to_string()
+                    };
+                }
+                _ => {}
+            }
+            ptr = unsafe { (*ptr).ai_next };
+        }
+        return_str
+    };
+    unsafe {
+        static_port_mapping_collection
+            .Add(
+                port_num as i32,
+                &BSTR::from(tcp_or_udp_string),
+                port_num as i32,
+                &BSTR::from(ip_str),
+                1,
+                &BSTR::from("kaihoukun"),
+            )
+            .map_err(|add_err| (add_err, AddFail))?
+    };
+    unsafe {
+        WSACleanup();
+    }
+
+    unsafe {
+        CoUninitialize();
+    }
+    Ok(())
 }
 
-fn close_port() {
+fn close_port() -> std::result::Result<(), (Error, ErrorKind)> {
     let mut get_port_check = BOOL::default();
     let port_num = unsafe {
         GetDlgItemInt(
             G_HDLG,
             PORT_NUM_INPUT,
-            &mut get_port_check,
+            Some(&mut get_port_check),
             BOOL::from(false),
         )
     };
     if get_port_check == BOOL::from(false) || port_num <= 0 || port_num > 65535 {
-        unsafe {
-            SetDlgItemTextW(G_HDLG, OUT_TEXT, w!("ポート番号が不正です"));
+        return Err((Error::OK, InvalidPortNumber));
+    }
+    let udp_check = unsafe { IsDlgButtonChecked(G_HDLG, UDP_CHECKED) };
+    let tcp_or_udp_string = if udp_check != 1 { "TCP" } else { "UDP" };
+    unsafe {
+        CoInitializeEx(None, COINIT_MULTITHREADED)
+            .map_err(|co_init_err| (co_init_err, CoInitializeFail))?;
+    }
+    let upnp_nat = unsafe {
+        CoCreateInstance::<Option<_>, IUPnPNAT>(
+            &UPnPNAT,
+            None,
+            CLSCTX_INPROC_SERVER
+                | CLSCTX_INPROC_HANDLER
+                | CLSCTX_LOCAL_SERVER
+                | CLSCTX_REMOTE_SERVER,
+        )
+        .map_err(|co_create_instance_err| (co_create_instance_err, CoCreateInstanceFail))?
+    };
+    let static_port_mapping_collection = unsafe {
+        upnp_nat
+            .StaticPortMappingCollection()
+            .map_err(|static_port_mapping_collection_err| {
+                (
+                    static_port_mapping_collection_err,
+                    StaticPortMappingCollectionFail,
+                )
+            })?
+    };
+    unsafe {
+        static_port_mapping_collection
+            .Remove(port_num as i32, &BSTR::from(tcp_or_udp_string))
+            .map_err(|remove_err| (remove_err, RemoveFail))?
+    };
+
+    unsafe {
+        CoUninitialize();
+    }
+    Ok(())
+}
+
+fn display_err(win_error: windows::core::Error, error_kind: ErrorKind) {
+    match error_kind {
+        InvalidPortNumber | WSAStartupFail | GetHostNameWFail | GetAddrInfoExWFail => {
+            display_err_without_code(error_kind);
         }
-    } else {
-        let udp_check = unsafe { IsDlgButtonChecked(G_HDLG, UDP_CHECKED) };
-        let tcp_or_udp_string = if udp_check != 1 { "TCP" } else { "UDP" };
-        match unsafe { CoInitializeEx(null(), COINIT_MULTITHREADED) } {
-            Ok(()) => {
-                match unsafe {
-                    CoCreateInstance::<Option<_>, IUPnPNAT>(
-                        &UPnPNAT,
-                        None,
-                        CLSCTX_INPROC_SERVER
-                            | CLSCTX_INPROC_HANDLER
-                            | CLSCTX_LOCAL_SERVER
-                            | CLSCTX_REMOTE_SERVER,
-                    )
-                } {
-                    Ok(p_upnp_nat) => match unsafe { p_upnp_nat.StaticPortMappingCollection() } {
-                        Ok(p_static_port_mapping_collection) => {
-                            match unsafe {
-                                p_static_port_mapping_collection
-                                    .Remove(port_num as i32, &BSTR::from(tcp_or_udp_string))
-                            } {
-                                Ok(()) => unsafe {
-                                    SetDlgItemTextW(G_HDLG, OUT_TEXT, w!("ポートを閉じました。"));
-                                },
-                                Err(remove_err) => {
-                                    err_display(
-                                        "ポートが閉じれませんでした。開いていますか？",
-                                        remove_err,
-                                        ErrorPoint::RemoveError,
-                                    );
-                                }
-                            }
-                        }
-                        Err(static_port_mapping_collection_err) => {
-                            err_display(
-                                "get_StaticPortMappingCollectionに失敗しました。",
-                                static_port_mapping_collection_err,
-                                ErrorPoint::StaticPortMappingCollectionError,
-                            );
-                        }
-                    },
-                    Err(co_create_instance_err) => {
-                        err_display(
-                            "CoCreateInstanceに失敗しました。",
-                            co_create_instance_err,
-                            ErrorPoint::CoCreateInstanceError,
-                        );
-                    }
-                }
-                unsafe {
-                    CoUninitialize();
-                }
-            }
-            Err(co_initialize_err) => {
-                err_display(
-                    "CoInitializeに失敗しました。",
-                    co_initialize_err,
-                    ErrorPoint::CoInitializeError,
-                );
-            }
-        }
+        _ => display_err_with_code(win_error, error_kind),
     }
 }
 
-fn err_display(first_string: &str, error: windows::core::Error, error_point: ErrorPoint) {
+fn display_err_without_code(error_kind: ErrorKind) {
+    let display_string = match error_kind {
+        InvalidPortNumber => w!("ポート番号が不正です"),
+        WSAStartupFail => w!("WSAStartup関数失敗です。"),
+        GetHostNameWFail => w!("GetHostNameW関数失敗です。"),
+        GetAddrInfoExWFail => w!("GetAddrInfoExW関数失敗です。"),
+        _ => {
+            unreachable!(
+                "コード付きエラーを予期しましたが、コード無しエラーの関数に到達しました。"
+            );
+        }
+    };
+    unsafe {
+        SetDlgItemTextW(G_HDLG, OUT_TEXT, display_string);
+    }
+}
+
+fn display_err_with_code(win_error: Error, error_kind: ErrorKind) {
     let display_string = format!(
         "{}\r\n\r\nエラーコード:{:?}\r\n({})\r\n詳細は{}を参照されたし。",
-        first_string,
-        error.code(),
-        error.message().to_string().trim(),
-        match error_point{
-            ErrorPoint::AddError=>"https://docs.microsoft.com/en-us/windows/win32/api/natupnp/nf-natupnp-istaticportmappingcollection-add",
-            ErrorPoint::RemoveError=>"https://docs.microsoft.com/en-us/windows/win32/api/natupnp/nf-natupnp-istaticportmappingcollection-remove",
-            ErrorPoint::CoInitializeError=>"https://docs.microsoft.com/en-us/windows/win32/api/objbase/nf-objbase-coinitialize",
-            ErrorPoint::CoCreateInstanceError=>"https://docs.microsoft.com/en-us/windows/win32/api/combaseapi/nf-combaseapi-cocreateinstance",
-            ErrorPoint::StaticPortMappingCollectionError=>"https://docs.microsoft.com/en-us/windows/win32/api/natupnp/nf-natupnp-iupnpnat-get_staticportmappingcollection",
+        match error_kind{
+            AddFail=>"ポート開放に失敗しました。",
+            RemoveFail=>"ポートが閉じれませんでした。開いていますか？",
+            CoInitializeFail=>"CoInitializeに失敗しました。",
+            CoCreateInstanceFail=>"CoCreateInstanceに失敗しました。",
+            StaticPortMappingCollectionFail=>"StaticPortMappingCollectionに失敗しました。",
+            _=>unreachable!("コード無しエラーを予期しましたが、コード付きエラーの関数に到達しました。"),
+        },
+        win_error.code(),
+        win_error.message().to_string().trim(),
+        match error_kind{
+            AddFail=>"https://docs.microsoft.com/en-us/windows/win32/api/natupnp/nf-natupnp-istaticportmappingcollection-add",
+            RemoveFail=>"https://docs.microsoft.com/en-us/windows/win32/api/natupnp/nf-natupnp-istaticportmappingcollection-remove",
+            CoInitializeFail=>"https://docs.microsoft.com/en-us/windows/win32/api/objbase/nf-objbase-coinitialize",
+            CoCreateInstanceFail=>"https://docs.microsoft.com/en-us/windows/win32/api/combaseapi/nf-combaseapi-cocreateinstance",
+            StaticPortMappingCollectionFail=>"https://docs.microsoft.com/en-us/windows/win32/api/natupnp/nf-natupnp-iupnpnat-get_staticportmappingcollection",
+            _=>unreachable!("コード無しエラーを予期しましたが、コード付きエラーの関数に到達しました。"),
         },
     );
     unsafe {
         SetDlgItemTextW(
             G_HDLG,
             OUT_TEXT,
-            PCWSTR::from(&HSTRING::from(&display_string)),
+            PCWSTR::from(&HSTRING::from(display_string)),
         );
     }
 }
