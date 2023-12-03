@@ -60,7 +60,7 @@ fn display_err_with_code(win_error: Error, error_kind: ErrorKind) {
         SetDlgItemTextW(
             G_HDLG,
             OUT_TEXT,
-            PCWSTR::from(&HSTRING::from(display_string)),
+            PCWSTR::from_raw(HSTRING::from(display_string).as_ptr()),
         );
     }
 }
