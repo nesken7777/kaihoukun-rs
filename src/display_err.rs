@@ -44,11 +44,11 @@ fn display_err_with_code(win_error: Error, error_kind: ErrorKind) {
         win_error.code(),
         win_error.message().to_string().trim(),
         match error_kind{
-            AddFail=>"https://docs.microsoft.com/en-us/windows/win32/api/natupnp/nf-natupnp-istaticportmappingcollection-add",
-            RemoveFail=>"https://docs.microsoft.com/en-us/windows/win32/api/natupnp/nf-natupnp-istaticportmappingcollection-remove",
-            CoInitializeFail=>"https://docs.microsoft.com/en-us/windows/win32/api/objbase/nf-objbase-coinitialize",
-            CoCreateInstanceFail=>"https://docs.microsoft.com/en-us/windows/win32/api/combaseapi/nf-combaseapi-cocreateinstance",
-            StaticPortMappingCollectionFail=>"https://docs.microsoft.com/en-us/windows/win32/api/natupnp/nf-natupnp-iupnpnat-get_staticportmappingcollection",
+            AddFail=>"https://learn.microsoft.com/en-us/windows/win32/api/natupnp/nf-natupnp-istaticportmappingcollection-add",
+            RemoveFail=>"https://learn.microsoft.com/en-us/windows/win32/api/natupnp/nf-natupnp-istaticportmappingcollection-remove",
+            CoInitializeFail=>"https://learn.microsoft.com/en-us/windows/win32/api/objbase/nf-objbase-coinitialize",
+            CoCreateInstanceFail=>"https://learn.microsoft.com/en-us/windows/win32/api/combaseapi/nf-combaseapi-cocreateinstance",
+            StaticPortMappingCollectionFail=>"https://learn.microsoft.com/en-us/windows/win32/api/natupnp/nf-natupnp-iupnpnat-get_staticportmappingcollection",
             _=>unreachable!("コード無しエラーを予期しましたが、コード付きエラーの関数に到達しました。"),
         },
     );
