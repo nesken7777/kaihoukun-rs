@@ -18,7 +18,8 @@ use windows::{
         UI::{
             Controls::{CheckDlgButton, BST_CHECKED},
             WindowsAndMessaging::{
-                DialogBoxParamW, EndDialog, SetDlgItemTextW, WM_COMMAND, WM_INITDIALOG,
+                DialogBoxParamW, EndDialog, SetDlgItemTextW, IDCANCEL, MESSAGEBOX_RESULT,
+                WM_COMMAND, WM_INITDIALOG,
             },
         },
     },
@@ -51,31 +52,30 @@ unsafe extern "system" fn dlg_proc(
             0
         }
         WM_COMMAND => match wparam.0 & 0xffff {
-            2 => {
+            OPEN_PORT => match open_port() {
+                Ok(_) => {
+                    SetDlgItemTextW(G_HDLG, OUT_TEXT, w!("ポート開放に成功しました。"));
+                    1
+                }
+                Err((win_error, error_kind)) => {
+                    display_err(win_error, error_kind);
+                    0
+                }
+            },
+            CLOSE_PORT => match close_port() {
+                Ok(_) => {
+                    SetDlgItemTextW(G_HDLG, OUT_TEXT, w!("ポートを閉じました。"));
+                    1
+                }
+                Err((win_error, error_kind)) => {
+                    display_err(win_error, error_kind);
+                    0
+                }
+            },
+            x if MESSAGEBOX_RESULT(x as i32) == IDCANCEL => {
                 EndDialog(window_handle, 2);
                 0
             }
-            OPEN_PORT => open_port().map_or_else(
-                |(win_error, error_kind)| {
-                    display_err(win_error, error_kind);
-                    0
-                },
-                |_| {
-                    SetDlgItemTextW(G_HDLG, OUT_TEXT, w!("ポート開放に成功しました。"));
-                    1
-                },
-            ),
-            CLOSE_PORT => close_port().map_or_else(
-                |(win_error, error_kind)| {
-                    display_err(win_error, error_kind);
-                    0
-                },
-                |_| {
-                    SetDlgItemTextW(G_HDLG, OUT_TEXT, w!("ポートを閉じました。"));
-                    1
-                },
-            ),
-
             _ => 0,
         },
         _ => 0,
