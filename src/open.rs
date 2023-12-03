@@ -1,13 +1,13 @@
-use std::ptr::null_mut;
+use std::{mem::transmute, net::Ipv4Addr, ptr::null_mut};
 
 use windows::{
     core::*,
     Win32::{
-        Foundation::BOOL,
+        Foundation::{BOOL, VARIANT_TRUE},
         NetworkManagement::WindowsFirewall::{IUPnPNAT, UPnPNAT},
         Networking::WinSock::{
-            GetAddrInfoExW, GetHostNameW, WSACleanup, WSAStartup, ADDRESS_FAMILY, ADDRINFOEXW,
-            AF_INET, NS_DNS, SOCKADDR_IN, SOCK_RAW, WSADATA,
+            GetAddrInfoExW, GetHostNameW, WSACleanup, WSAStartup, ADDRINFOEXW, AF_INET, NS_DNS,
+            SOCKADDR_IN, SOCK_RAW, WSADATA,
         },
         System::Com::{
             CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_HANDLER,
@@ -77,7 +77,7 @@ pub fn open_port() -> std::result::Result<(), (Error, ErrorKind)> {
 
     let hints = ADDRINFOEXW {
         ai_family: AF_INET.0 as i32,
-        ai_socktype: SOCK_RAW as i32,
+        ai_socktype: SOCK_RAW.0,
         ..Default::default()
     };
     let mut addr_info: *mut ADDRINFOEXW = null_mut();
@@ -98,28 +98,33 @@ pub fn open_port() -> std::result::Result<(), (Error, ErrorKind)> {
     if dw_retval != 0 {
         return Err((Error::OK, GetAddrInfoExWFail));
     }
-    let mut ptr = addr_info;
 
     let ip_str = {
-        let mut return_str = String::with_capacity(64);
-        while !ptr.is_null() && return_str.is_empty() {
-            match unsafe { ADDRESS_FAMILY(((*ptr).ai_family) as u32) } {
-                AF_INET => {
-                    return_str = unsafe {
-                        std::net::Ipv4Addr::from((*((*ptr).ai_addr as *mut SOCKADDR_IN)).sin_addr)
-                            .to_string()
-                    };
-                    //Hamachiの場合以下で飛ばすようにしているが、なんか手続き的でダサい。mut Stringの方をどうにかしたい
-                    if &return_str[0..2] == "25" {
-                        return_str.clear();
+        fn determine_ip(ptr: Option<&ADDRINFOEXW>) -> String {
+            match ptr {
+                Some(addr_info) => {
+                    let sockaddr = unsafe { *addr_info.ai_addr.as_ref().expect("結果のai_addrがnullになることは無いと思う") };
+                    match sockaddr.sa_family {
+                        AF_INET => {
+                            let return_str = unsafe {
+                                Ipv4Addr::from(transmute::<_, SOCKADDR_IN>(sockaddr).sin_addr)
+                                    .to_string()
+                            };
+                            if &return_str[0..2] == "25" {
+                                determine_ip(unsafe { (addr_info.ai_next).as_ref() })
+                            } else {
+                                return_str
+                            }
+                        }
+                        _ => "".to_string(),
                     }
                 }
-                _ => {}
+                None => "".to_string(),
             }
-            ptr = unsafe { (*ptr).ai_next };
         }
-        return_str
+        determine_ip(unsafe { addr_info.as_ref() })
     };
+
     unsafe {
         static_port_mapping_collection
             .Add(
@@ -127,7 +132,7 @@ pub fn open_port() -> std::result::Result<(), (Error, ErrorKind)> {
                 &BSTR::from(tcp_or_udp_string),
                 port_num as i32,
                 &BSTR::from(ip_str),
-                1,
+                VARIANT_TRUE,
                 &BSTR::from("kaihoukun"),
             )
             .map_err(|add_err| (add_err, AddFail))?;
