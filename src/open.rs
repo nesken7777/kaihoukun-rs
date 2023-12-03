@@ -36,7 +36,7 @@ pub fn open_port() -> std::result::Result<(), (Error, ErrorKind)> {
         return Err((Error::OK, InvalidPortNumber));
     }
     let udp_check = unsafe { IsDlgButtonChecked(G_HDLG, UDP_CHECKED) };
-    let tcp_or_udp_string = if udp_check != 1 { "TCP" } else { "UDP" };
+    let tcp_or_udp_str = if udp_check != 1 { "TCP" } else { "UDP" };
     unsafe {
         CoInitializeEx(None, COINIT_MULTITHREADED)
             .map_err(|co_init_err| (co_init_err, CoInitializeFail))?
@@ -129,7 +129,7 @@ pub fn open_port() -> std::result::Result<(), (Error, ErrorKind)> {
         static_port_mapping_collection
             .Add(
                 port_num as i32,
-                &BSTR::from(tcp_or_udp_string),
+                &BSTR::from(tcp_or_udp_str),
                 port_num as i32,
                 &BSTR::from(ip_str),
                 VARIANT_TRUE,
