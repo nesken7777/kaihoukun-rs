@@ -63,6 +63,28 @@ pub fn open_port() -> std::result::Result<(), (Error, ErrorKind)> {
             })?
     };
 
+    let ip_str = determine_ip()?;
+
+    unsafe {
+        static_port_mapping_collection
+            .Add(
+                port_num as i32,
+                &BSTR::from(tcp_or_udp_str),
+                port_num as i32,
+                &BSTR::from(ip_str),
+                VARIANT_TRUE,
+                &BSTR::from("kaihoukun"),
+            )
+            .map_err(|add_err| (add_err, AddFail))?;
+    }
+    unsafe {
+        WSACleanup();
+        CoUninitialize();
+    }
+    Ok(())
+}
+
+fn determine_ip() -> std::result::Result<String, (Error, ErrorKind)> {
     let mut wsa_data = WSADATA::default();
     let wsaresult = unsafe { WSAStartup(0x202, &mut wsa_data) };
     if wsaresult != 0 {
@@ -103,7 +125,12 @@ pub fn open_port() -> std::result::Result<(), (Error, ErrorKind)> {
         fn determine_ip(ptr: Option<&ADDRINFOEXW>) -> String {
             match ptr {
                 Some(addr_info) => {
-                    let sockaddr = unsafe { *addr_info.ai_addr.as_ref().expect("結果のai_addrがnullになることは無いと思う") };
+                    let sockaddr = unsafe {
+                        *addr_info
+                            .ai_addr
+                            .as_ref()
+                            .expect("結果のai_addrがnullになることは無いと思う")
+                    };
                     match sockaddr.sa_family {
                         AF_INET => {
                             let return_str = unsafe {
@@ -124,22 +151,5 @@ pub fn open_port() -> std::result::Result<(), (Error, ErrorKind)> {
         }
         determine_ip(unsafe { addr_info.as_ref() })
     };
-
-    unsafe {
-        static_port_mapping_collection
-            .Add(
-                port_num as i32,
-                &BSTR::from(tcp_or_udp_str),
-                port_num as i32,
-                &BSTR::from(ip_str),
-                VARIANT_TRUE,
-                &BSTR::from("kaihoukun"),
-            )
-            .map_err(|add_err| (add_err, AddFail))?;
-    }
-    unsafe {
-        WSACleanup();
-        CoUninitialize();
-    }
-    Ok(())
+    Ok(ip_str)
 }
