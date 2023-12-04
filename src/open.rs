@@ -103,7 +103,7 @@ fn determine_ip() -> std::result::Result<String, (Error, ErrorKind)> {
         ..Default::default()
     };
     let mut addr_info: *mut ADDRINFOEXW = null_mut();
-    let dw_retval = unsafe {
+    let wsa_error_code = unsafe {
         GetAddrInfoExW(
             PCWSTR::from_raw(localhost_name.as_ptr()),
             w!("7"),
@@ -117,7 +117,7 @@ fn determine_ip() -> std::result::Result<String, (Error, ErrorKind)> {
             None,
         )
     };
-    if dw_retval != 0 {
+    if wsa_error_code != 0 {
         return Err((Error::OK, GetAddrInfoExWFail));
     }
 
