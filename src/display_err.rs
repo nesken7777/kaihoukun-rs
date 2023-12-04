@@ -52,9 +52,8 @@ fn display_err_with_code(win_error: Error, error_kind: ErrorKind) {
             _=>unreachable!("コード無しエラーを予期しましたが、コード付きエラーの関数に到達しました。"),
         },
     );
-    //この一文のためにdisplay_stringにmut付いたしErrorKindにPartialEq付いた もうちょっといい書き方知りたい
-    if error_kind == StaticPortMappingCollectionFail && win_error.code() == HRESULT(0) {
-        display_string.push_str("\r\nルーター側でUPnPが許可されていない可能性があります。");
+    if matches!(error_kind, StaticPortMappingCollectionFail) && win_error.code() == HRESULT(0) {
+        display_string.push_str("\r\nもしくはルーター側でUPnPが許可されていない可能性があります。\r\nあとパブリックネットワーク上で試行されているとたまにエラーになります。");
     }
     unsafe {
         SetDlgItemTextW(

@@ -11,7 +11,6 @@ pub const OPEN_PORT: usize = 5005;
 pub const CLOSE_PORT: usize = 5006;
 pub static G_HDLG: OnceLock<HWND>  = OnceLock::new();
 
-#[derive(PartialEq)]
 pub enum ErrorKind {
     InvalidPortNumber,
     WSAStartupFail,
