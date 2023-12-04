@@ -9,13 +9,22 @@ pub const UDP_CHECKED: i32 = 5003;
 pub const OUT_TEXT: i32 = 5004;
 pub const OPEN_PORT: usize = 5005;
 pub const CLOSE_PORT: usize = 5006;
-pub static G_HDLG: OnceLock<HWND>  = OnceLock::new();
+pub static G_HDLG: OnceLock<HWND> = OnceLock::new();
 
 pub enum ErrorKind {
+    APIE(APICreatedError),
+    SelfE(SelfCreatedError),
+}
+
+pub enum SelfCreatedError {
     InvalidPortNumber,
     WSAStartupFail,
-    GetAddrInfoExWFail,
     GetHostNameWFail,
+    GetAddrInfoExWFail,
+    IPNotFound,
+}
+
+pub enum APICreatedError {
     CoInitializeFail,
     CoCreateInstanceFail,
     StaticPortMappingCollectionFail,

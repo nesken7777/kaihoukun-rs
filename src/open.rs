@@ -18,7 +18,9 @@ use windows::{
 };
 
 use crate::consts::{
+    APICreatedError::*,
     ErrorKind::{self, *},
+    SelfCreatedError::*,
     G_HDLG, PORT_NUM_INPUT, UDP_CHECKED,
 };
 
@@ -33,13 +35,13 @@ pub fn open_port() -> std::result::Result<(), (Error, ErrorKind)> {
         )
     };
     if get_port_check == BOOL::from(false) || port_num <= 0 || port_num > 65535 {
-        return Err((Error::OK, InvalidPortNumber));
+        return Err((Error::OK, SelfE(InvalidPortNumber)));
     }
     let udp_check = unsafe { IsDlgButtonChecked(*G_HDLG.get().unwrap(), UDP_CHECKED) };
     let tcp_or_udp_str = if udp_check != 1 { "TCP" } else { "UDP" };
     unsafe {
         CoInitializeEx(None, COINIT_MULTITHREADED)
-            .map_err(|co_init_err| (co_init_err, CoInitializeFail))?
+            .map_err(|co_init_err| (co_init_err, APIE(CoInitializeFail)))?
     };
     let upnp_nat = unsafe {
         CoCreateInstance::<_, IUPnPNAT>(
@@ -50,7 +52,7 @@ pub fn open_port() -> std::result::Result<(), (Error, ErrorKind)> {
                 | CLSCTX_LOCAL_SERVER
                 | CLSCTX_REMOTE_SERVER,
         )
-        .map_err(|co_create_instance_err| (co_create_instance_err, CoCreateInstanceFail))?
+        .map_err(|co_create_instance_err| (co_create_instance_err, APIE(CoCreateInstanceFail)))?
     };
     let static_port_mapping_collection = unsafe {
         upnp_nat
@@ -58,7 +60,7 @@ pub fn open_port() -> std::result::Result<(), (Error, ErrorKind)> {
             .map_err(|static_port_mapping_collection_err| {
                 (
                     static_port_mapping_collection_err,
-                    StaticPortMappingCollectionFail,
+                    APIE(StaticPortMappingCollectionFail),
                 )
             })?
     };
@@ -75,7 +77,7 @@ pub fn open_port() -> std::result::Result<(), (Error, ErrorKind)> {
                 VARIANT_TRUE,
                 &BSTR::from("kaihoukun"),
             )
-            .map_err(|add_err| (add_err, AddFail))?;
+            .map_err(|add_err| (add_err, APIE(AddFail)))?;
     }
     unsafe {
         WSACleanup();
@@ -88,13 +90,13 @@ fn determine_ip() -> std::result::Result<String, (Error, ErrorKind)> {
     let mut wsa_data = WSADATA::default();
     let wsaresult = unsafe { WSAStartup(0x202, &mut wsa_data) };
     if wsaresult != 0 {
-        return Err((Error::OK, WSAStartupFail));
+        return Err((Error::OK, SelfE(WSAStartupFail)));
     }
 
     let mut localhost_name = [0u16; 260];
     let gethostname_result = unsafe { GetHostNameW(localhost_name.as_mut_slice()) };
     if gethostname_result != 0 {
-        return Err((Error::OK, GetHostNameWFail));
+        return Err((Error::OK, SelfE(GetHostNameWFail)));
     }
 
     let hints = ADDRINFOEXW {
@@ -118,11 +120,13 @@ fn determine_ip() -> std::result::Result<String, (Error, ErrorKind)> {
         )
     };
     if wsa_error_code != 0 {
-        return Err((Error::OK, GetAddrInfoExWFail));
+        return Err((Error::OK, SelfE(GetAddrInfoExWFail)));
     }
 
     let ip_str = {
-        fn determine_ip(ptr: Option<&ADDRINFOEXW>) -> String {
+        fn determine_ip(
+            ptr: Option<&ADDRINFOEXW>,
+        ) -> std::result::Result<String, (Error, ErrorKind)> {
             match ptr {
                 Some(addr_info) => {
                     let sockaddr = unsafe {
@@ -140,16 +144,16 @@ fn determine_ip() -> std::result::Result<String, (Error, ErrorKind)> {
                             if &return_str[0..2] == "25" {
                                 determine_ip(unsafe { (addr_info.ai_next).as_ref() })
                             } else {
-                                return_str
+                                Ok(return_str)
                             }
                         }
-                        _ => "".to_string(),
+                        _ => Err((Error::OK, SelfE(IPNotFound))),
                     }
                 }
-                None => "".to_string(),
+                None => Err((Error::OK, SelfE(IPNotFound))),
             }
         }
         determine_ip(unsafe { addr_info.as_ref() })
     };
-    Ok(ip_str)
+    ip_str
 }

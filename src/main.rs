@@ -47,14 +47,18 @@ unsafe extern "system" fn dlg_proc(
 ) -> isize {
     match message {
         WM_INITDIALOG => {
-            CheckDlgButton(window_handle, TCP_CHECKED, BST_CHECKED);
+            let _ = CheckDlgButton(window_handle, TCP_CHECKED, BST_CHECKED);
             G_HDLG.get_or_init(|| window_handle);
             0
         }
         WM_COMMAND => match wparam.0 & 0xffff {
             OPEN_PORT => match open_port() {
                 Ok(_) => {
-                    SetDlgItemTextW(*G_HDLG.get().unwrap(), OUT_TEXT, w!("ポート開放に成功しました。"));
+                    let _ = SetDlgItemTextW(
+                        *G_HDLG.get().unwrap(),
+                        OUT_TEXT,
+                        w!("ポート開放に成功しました。"),
+                    );
                     1
                 }
                 Err((win_error, error_kind)) => {
@@ -64,7 +68,11 @@ unsafe extern "system" fn dlg_proc(
             },
             CLOSE_PORT => match close_port() {
                 Ok(_) => {
-                    SetDlgItemTextW(*G_HDLG.get().unwrap(), OUT_TEXT, w!("ポートを閉じました。"));
+                    let _ = SetDlgItemTextW(
+                        *G_HDLG.get().unwrap(),
+                        OUT_TEXT,
+                        w!("ポートを閉じました。"),
+                    );
                     1
                 }
                 Err((win_error, error_kind)) => {
@@ -73,7 +81,7 @@ unsafe extern "system" fn dlg_proc(
                 }
             },
             x if MESSAGEBOX_RESULT(x as i32) == IDCANCEL => {
-                EndDialog(window_handle, 2);
+                let _ = EndDialog(window_handle, 2);
                 0
             }
             _ => 0,
