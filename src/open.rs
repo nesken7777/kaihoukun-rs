@@ -26,7 +26,7 @@ pub fn open_port() -> std::result::Result<(), (Error, ErrorKind)> {
     let mut get_port_check = BOOL::default();
     let port_num = unsafe {
         GetDlgItemInt(
-            G_HDLG,
+            *G_HDLG.get().unwrap(),
             PORT_NUM_INPUT,
             Some(&mut get_port_check),
             BOOL::from(false),
@@ -35,7 +35,7 @@ pub fn open_port() -> std::result::Result<(), (Error, ErrorKind)> {
     if get_port_check == BOOL::from(false) || port_num <= 0 || port_num > 65535 {
         return Err((Error::OK, InvalidPortNumber));
     }
-    let udp_check = unsafe { IsDlgButtonChecked(G_HDLG, UDP_CHECKED) };
+    let udp_check = unsafe { IsDlgButtonChecked(*G_HDLG.get().unwrap(), UDP_CHECKED) };
     let tcp_or_udp_str = if udp_check != 1 { "TCP" } else { "UDP" };
     unsafe {
         CoInitializeEx(None, COINIT_MULTITHREADED)

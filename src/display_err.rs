@@ -26,7 +26,7 @@ fn display_err_without_code(error_kind: ErrorKind) {
         }
     };
     unsafe {
-        SetDlgItemTextW(G_HDLG, OUT_TEXT, display_string);
+        SetDlgItemTextW(*G_HDLG.get().unwrap(), OUT_TEXT, display_string);
     }
 }
 
@@ -58,7 +58,7 @@ fn display_err_with_code(win_error: Error, error_kind: ErrorKind) {
     }
     unsafe {
         SetDlgItemTextW(
-            G_HDLG,
+            *G_HDLG.get().unwrap(),
             OUT_TEXT,
             PCWSTR::from_raw(HSTRING::from(display_string).as_ptr()),
         );

@@ -48,13 +48,13 @@ unsafe extern "system" fn dlg_proc(
     match message {
         WM_INITDIALOG => {
             CheckDlgButton(window_handle, TCP_CHECKED, BST_CHECKED);
-            G_HDLG = window_handle;
+            G_HDLG.get_or_init(|| window_handle);
             0
         }
         WM_COMMAND => match wparam.0 & 0xffff {
             OPEN_PORT => match open_port() {
                 Ok(_) => {
-                    SetDlgItemTextW(G_HDLG, OUT_TEXT, w!("ポート開放に成功しました。"));
+                    SetDlgItemTextW(*G_HDLG.get().unwrap(), OUT_TEXT, w!("ポート開放に成功しました。"));
                     1
                 }
                 Err((win_error, error_kind)) => {
@@ -64,7 +64,7 @@ unsafe extern "system" fn dlg_proc(
             },
             CLOSE_PORT => match close_port() {
                 Ok(_) => {
-                    SetDlgItemTextW(G_HDLG, OUT_TEXT, w!("ポートを閉じました。"));
+                    SetDlgItemTextW(*G_HDLG.get().unwrap(), OUT_TEXT, w!("ポートを閉じました。"));
                     1
                 }
                 Err((win_error, error_kind)) => {
