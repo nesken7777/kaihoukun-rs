@@ -7,7 +7,7 @@ pub const OPEN_PORT: usize = 5005;
 pub const CLOSE_PORT: usize = 5006;
 
 pub enum ErrorKind {
-    APIE(APICreatedError),
+    ApiE(APICreatedError),
     SelfE(SelfCreatedError),
 }
 

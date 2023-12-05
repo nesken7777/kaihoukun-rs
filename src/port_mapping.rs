@@ -1,10 +1,10 @@
 use std::{mem::transmute, net::Ipv4Addr, ptr::null_mut};
 
 use windows::{
-    core::*,
+    core::{Error, BSTR, w, PCWSTR},
     Win32::{
         Foundation::VARIANT_TRUE,
-        NetworkManagement::WindowsFirewall::{IUPnPNAT, UPnPNAT},
+        NetworkManagement::WindowsFirewall::{IStaticPortMappingCollection, IUPnPNAT, UPnPNAT},
         Networking::WinSock::{
             GetAddrInfoExW, GetHostNameW, WSACleanup, WSAStartup, ADDRINFOEXW, AF_INET, NS_DNS,
             SOCKADDR_IN, SOCK_RAW, WSADATA,
@@ -22,35 +22,28 @@ use crate::consts::{
     SelfCreatedError::*,
 };
 
+pub fn close_port(
+    port_num: u16,
+    protocol: &'static str,
+) -> std::result::Result<(), (Error, ErrorKind)> {
+    let static_port_mapping_collection = get_static_port_mapping_collection()?;
+    unsafe {
+        static_port_mapping_collection
+            .Remove(port_num.into(), &BSTR::from(protocol))
+            .map_err(|remove_err| (remove_err, ApiE(RemoveFail)))?
+    };
+
+    unsafe {
+        CoUninitialize();
+    }
+    Ok(())
+}
+
 pub fn open_port(
     port_num: u16,
     protocol: &'static str,
 ) -> std::result::Result<(), (Error, ErrorKind)> {
-    unsafe {
-        CoInitializeEx(None, COINIT_MULTITHREADED)
-            .map_err(|co_init_err| (co_init_err, APIE(CoInitializeFail)))?
-    };
-    let upnp_nat = unsafe {
-        CoCreateInstance::<_, IUPnPNAT>(
-            &UPnPNAT,
-            None,
-            CLSCTX_INPROC_SERVER
-                | CLSCTX_INPROC_HANDLER
-                | CLSCTX_LOCAL_SERVER
-                | CLSCTX_REMOTE_SERVER,
-        )
-        .map_err(|co_create_instance_err| (co_create_instance_err, APIE(CoCreateInstanceFail)))?
-    };
-    let static_port_mapping_collection = unsafe {
-        upnp_nat
-            .StaticPortMappingCollection()
-            .map_err(|static_port_mapping_collection_err| {
-                (
-                    static_port_mapping_collection_err,
-                    APIE(StaticPortMappingCollectionFail),
-                )
-            })?
-    };
+    let static_port_mapping_collection = get_static_port_mapping_collection()?;
 
     let ip_str = determine_ip()?;
 
@@ -64,13 +57,43 @@ pub fn open_port(
                 VARIANT_TRUE,
                 &BSTR::from("kaihoukun"),
             )
-            .map_err(|add_err| (add_err, APIE(AddFail)))?;
+            .map_err(|add_err| (add_err, ApiE(AddFail)))?;
     }
     unsafe {
         WSACleanup();
         CoUninitialize();
     }
     Ok(())
+}
+
+fn get_static_port_mapping_collection(
+) -> std::result::Result<IStaticPortMappingCollection, (Error, ErrorKind)> {
+    unsafe {
+        CoInitializeEx(None, COINIT_MULTITHREADED)
+            .map_err(|co_init_err| (co_init_err, ApiE(CoInitializeFail)))?
+    };
+    let upnp_nat = unsafe {
+        CoCreateInstance::<_, IUPnPNAT>(
+            &UPnPNAT,
+            None,
+            CLSCTX_INPROC_SERVER
+                | CLSCTX_INPROC_HANDLER
+                | CLSCTX_LOCAL_SERVER
+                | CLSCTX_REMOTE_SERVER,
+        )
+        .map_err(|co_create_instance_err| (co_create_instance_err, ApiE(CoCreateInstanceFail)))?
+    };
+    let static_port_mapping_collection = unsafe {
+        upnp_nat
+            .StaticPortMappingCollection()
+            .map_err(|static_port_mapping_collection_err| {
+                (
+                    static_port_mapping_collection_err,
+                    ApiE(StaticPortMappingCollectionFail),
+                )
+            })?
+    };
+    Ok(static_port_mapping_collection)
 }
 
 fn determine_ip() -> std::result::Result<String, (Error, ErrorKind)> {

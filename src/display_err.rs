@@ -12,7 +12,7 @@ use windows::{
 pub fn display_err(error: windows::core::Error, kind: ErrorKind, window_handle: HWND) {
     match kind {
         SelfE(kind) => display_err_without_code(kind, window_handle),
-        APIE(kind) => display_err_with_code(error, kind, window_handle),
+        ApiE(kind) => display_err_with_code(error, kind, window_handle),
     }
 }
 

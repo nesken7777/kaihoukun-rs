@@ -1,16 +1,14 @@
 #![windows_subsystem = "windows"]
 
-mod close;
 mod consts;
 mod dialog;
 mod display_err;
-mod open;
+mod port_mapping;
 
-use close::close_port;
 use consts::{CLOSE_PORT, DIALOG, OPEN_PORT, OUT_TEXT, TCP_CHECKED};
 use dialog::get_dialog_item;
 use display_err::display_err;
-use open::open_port;
+use port_mapping::{close_port, open_port};
 use windows::{
     core::*,
     Win32::{
