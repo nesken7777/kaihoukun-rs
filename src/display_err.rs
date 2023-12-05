@@ -2,19 +2,22 @@ use crate::consts::{
     APICreatedError::{self, *},
     ErrorKind::{self, *},
     SelfCreatedError::{self, *},
-    G_HDLG, OUT_TEXT,
+    OUT_TEXT,
 };
-use windows::{core::*, Win32::UI::WindowsAndMessaging::SetDlgItemTextW};
+use windows::{
+    core::*,
+    Win32::{Foundation::HWND, UI::WindowsAndMessaging::SetDlgItemTextW},
+};
 
-pub fn display_err(win_error: windows::core::Error, error_kind: ErrorKind) {
-    match error_kind {
-        SelfE(error_kind) => display_err_without_code(error_kind),
-        APIE(error_kind) => display_err_with_code(win_error, error_kind),
+pub fn display_err(error: windows::core::Error, kind: ErrorKind, window_handle: HWND) {
+    match kind {
+        SelfE(kind) => display_err_without_code(kind, window_handle),
+        APIE(kind) => display_err_with_code(error, kind, window_handle),
     }
 }
 
-fn display_err_without_code(error_kind: SelfCreatedError) {
-    let display_string = match error_kind {
+fn display_err_without_code(kind: SelfCreatedError, window_handle: HWND) {
+    let display_string = match kind {
         InvalidPortNumber => w!("ポート番号が不正です"),
         WSAStartupFail => w!("WSAStartup関数失敗です。"),
         GetHostNameWFail => w!("GetHostNameW関数失敗です。"),
@@ -22,23 +25,23 @@ fn display_err_without_code(error_kind: SelfCreatedError) {
         IPNotFound => w!("IPアドレスが見つかりませんでした。"),
     };
     unsafe {
-        let _ = SetDlgItemTextW(*G_HDLG.get().unwrap(), OUT_TEXT, display_string);
+        let _ = SetDlgItemTextW(window_handle, OUT_TEXT, display_string);
     }
 }
 
-fn display_err_with_code(win_error: Error, error_kind: APICreatedError) {
+fn display_err_with_code(error: Error, kind: APICreatedError, window_handle: HWND) {
     let mut display_string = format!(
         "{}\r\n\r\nエラーコード:{:?}\r\n({})\r\n詳細は{}を参照されたし。",
-        match error_kind{
+        match kind{
             AddFail=>"ポート開放に失敗しました。",
             RemoveFail=>"ポートが閉じれませんでした。開いていますか？",
             CoInitializeFail=>"CoInitializeに失敗しました。",
             CoCreateInstanceFail=>"CoCreateInstanceに失敗しました。",
             StaticPortMappingCollectionFail=>"StaticPortMappingCollectionに失敗しました。",
         },
-        win_error.code(),
-        win_error.message().to_string().trim(),
-        match error_kind{
+        error.code(),
+        error.message().to_string().trim(),
+        match kind{
             AddFail=>"https://learn.microsoft.com/en-us/windows/win32/api/natupnp/nf-natupnp-istaticportmappingcollection-add",
             RemoveFail=>"https://learn.microsoft.com/en-us/windows/win32/api/natupnp/nf-natupnp-istaticportmappingcollection-remove",
             CoInitializeFail=>"https://learn.microsoft.com/en-us/windows/win32/api/objbase/nf-objbase-coinitialize",
@@ -46,12 +49,12 @@ fn display_err_with_code(win_error: Error, error_kind: APICreatedError) {
             StaticPortMappingCollectionFail=>"https://learn.microsoft.com/en-us/windows/win32/api/natupnp/nf-natupnp-iupnpnat-get_staticportmappingcollection",
         },
     );
-    if matches!(error_kind, StaticPortMappingCollectionFail) && win_error.code() == HRESULT(0) {
-        display_string.push_str("\r\nもしくはルーター側でUPnPが許可されていない可能性があります。\r\nあとパブリックネットワーク上で試行されているとたまにエラーになります。");
+    if matches!(kind, StaticPortMappingCollectionFail) && error.code() == HRESULT(0) {
+        display_string.push_str("\r\nルーター側でUPnPが許可されていない可能性があります。\r\nあとパブリックネットワーク上で試行されているとたまにエラーになります。");
     }
     unsafe {
         let _ = SetDlgItemTextW(
-            *G_HDLG.get().unwrap(),
+            window_handle,
             OUT_TEXT,
             PCWSTR::from_raw(HSTRING::from(display_string).as_ptr()),
         );

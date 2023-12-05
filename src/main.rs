@@ -2,14 +2,15 @@
 
 mod close;
 mod consts;
+mod dialog;
 mod display_err;
 mod open;
 
 use close::close_port;
-use consts::{CLOSE_PORT, DIALOG, G_HDLG, OPEN_PORT, OUT_TEXT, TCP_CHECKED};
+use consts::{CLOSE_PORT, DIALOG, OPEN_PORT, OUT_TEXT, TCP_CHECKED};
+use dialog::get_dialog_item;
 use display_err::display_err;
 use open::open_port;
-
 use windows::{
     core::*,
     Win32::{
@@ -48,35 +49,43 @@ unsafe extern "system" fn dlg_proc(
     match message {
         WM_INITDIALOG => {
             let _ = CheckDlgButton(window_handle, TCP_CHECKED, BST_CHECKED);
-            G_HDLG.get_or_init(|| window_handle);
             0
         }
         WM_COMMAND => match wparam.0 & 0xffff {
-            OPEN_PORT => match open_port() {
-                Ok(_) => {
-                    let _ = SetDlgItemTextW(
-                        *G_HDLG.get().unwrap(),
-                        OUT_TEXT,
-                        w!("ポート開放に成功しました。"),
-                    );
-                    1
-                }
-                Err((win_error, error_kind)) => {
-                    display_err(win_error, error_kind);
-                    0
-                }
-            },
-            CLOSE_PORT => match close_port() {
-                Ok(_) => {
-                    let _ = SetDlgItemTextW(
-                        *G_HDLG.get().unwrap(),
-                        OUT_TEXT,
-                        w!("ポートを閉じました。"),
-                    );
-                    1
-                }
-                Err((win_error, error_kind)) => {
-                    display_err(win_error, error_kind);
+            command @ (OPEN_PORT | CLOSE_PORT) => match get_dialog_item(window_handle) {
+                Ok((port_num, protocol)) => match command {
+                    OPEN_PORT => match open_port(port_num, protocol) {
+                        Ok(_) => {
+                            let _ = SetDlgItemTextW(
+                                window_handle,
+                                OUT_TEXT,
+                                w!("ポート開放に成功しました。"),
+                            );
+                            1
+                        }
+                        Err((error, kind)) => {
+                            display_err(error, kind, window_handle);
+                            0
+                        }
+                    },
+                    CLOSE_PORT => match close_port(port_num, protocol) {
+                        Ok(_) => {
+                            let _ = SetDlgItemTextW(
+                                window_handle,
+                                OUT_TEXT,
+                                w!("ポートを閉じました。"),
+                            );
+                            1
+                        }
+                        Err((error, kind)) => {
+                            display_err(error, kind, window_handle);
+                            0
+                        }
+                    },
+                    _ => unreachable!(),
+                },
+                Err((error, kind)) => {
+                    display_err(error, kind, window_handle);
                     0
                 }
             },

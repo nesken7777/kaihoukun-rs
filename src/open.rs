@@ -3,7 +3,7 @@ use std::{mem::transmute, net::Ipv4Addr, ptr::null_mut};
 use windows::{
     core::*,
     Win32::{
-        Foundation::{BOOL, VARIANT_TRUE},
+        Foundation::VARIANT_TRUE,
         NetworkManagement::WindowsFirewall::{IUPnPNAT, UPnPNAT},
         Networking::WinSock::{
             GetAddrInfoExW, GetHostNameW, WSACleanup, WSAStartup, ADDRINFOEXW, AF_INET, NS_DNS,
@@ -13,7 +13,6 @@ use windows::{
             CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_HANDLER,
             CLSCTX_INPROC_SERVER, CLSCTX_LOCAL_SERVER, CLSCTX_REMOTE_SERVER, COINIT_MULTITHREADED,
         },
-        UI::{Controls::IsDlgButtonChecked, WindowsAndMessaging::GetDlgItemInt},
     },
 };
 
@@ -21,24 +20,12 @@ use crate::consts::{
     APICreatedError::*,
     ErrorKind::{self, *},
     SelfCreatedError::*,
-    G_HDLG, PORT_NUM_INPUT, UDP_CHECKED,
 };
 
-pub fn open_port() -> std::result::Result<(), (Error, ErrorKind)> {
-    let mut get_port_check = BOOL::default();
-    let port_num = unsafe {
-        GetDlgItemInt(
-            *G_HDLG.get().unwrap(),
-            PORT_NUM_INPUT,
-            Some(&mut get_port_check),
-            BOOL::from(false),
-        )
-    };
-    if get_port_check == BOOL::from(false) || port_num <= 0 || port_num > 65535 {
-        return Err((Error::OK, SelfE(InvalidPortNumber)));
-    }
-    let udp_check = unsafe { IsDlgButtonChecked(*G_HDLG.get().unwrap(), UDP_CHECKED) };
-    let tcp_or_udp_str = if udp_check != 1 { "TCP" } else { "UDP" };
+pub fn open_port(
+    port_num: u16,
+    protocol: &'static str,
+) -> std::result::Result<(), (Error, ErrorKind)> {
     unsafe {
         CoInitializeEx(None, COINIT_MULTITHREADED)
             .map_err(|co_init_err| (co_init_err, APIE(CoInitializeFail)))?
@@ -70,9 +57,9 @@ pub fn open_port() -> std::result::Result<(), (Error, ErrorKind)> {
     unsafe {
         static_port_mapping_collection
             .Add(
-                port_num as i32,
-                &BSTR::from(tcp_or_udp_str),
-                port_num as i32,
+                port_num.into(),
+                &BSTR::from(protocol),
+                port_num.into(),
                 &BSTR::from(ip_str),
                 VARIANT_TRUE,
                 &BSTR::from("kaihoukun"),
