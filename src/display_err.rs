@@ -30,14 +30,15 @@ fn display_err_without_code(kind: SelfCreatedError, window_handle: HWND) {
 }
 
 fn display_err_with_code(error: Error, kind: APICreatedError, window_handle: HWND) {
-    let mut display_string = format!(
+    let display_string = format!(
         "{}\r\n\r\nエラーコード:{:?}\r\n({})\r\n詳細は{}を参照されたし。",
         match kind{
             AddFail=>"ポート開放に失敗しました。",
             RemoveFail=>"ポートが閉じれませんでした。開いていますか？",
             CoInitializeFail=>"CoInitializeに失敗しました。",
             CoCreateInstanceFail=>"CoCreateInstanceに失敗しました。",
-            StaticPortMappingCollectionFail=>"StaticPortMappingCollectionに失敗しました。",
+            StaticPortMappingCollectionFail if error.code() == HRESULT(0)=>"StaticPortMappingCollectionに失敗しました。\r\nルーター側でUPnPが許可されていない可能性があります。\r\nあとパブリックネットワーク上で試行されているとたまにエラーになります。",
+            StaticPortMappingCollectionFail => "StaticPortMappingCollectionに失敗しました。",
         },
         error.code(),
         error.message().to_string().trim(),
@@ -49,9 +50,6 @@ fn display_err_with_code(error: Error, kind: APICreatedError, window_handle: HWN
             StaticPortMappingCollectionFail=>"https://learn.microsoft.com/en-us/windows/win32/api/natupnp/nf-natupnp-iupnpnat-get_staticportmappingcollection",
         },
     );
-    if matches!(kind, StaticPortMappingCollectionFail) && error.code() == HRESULT(0) {
-        display_string.push_str("\r\nルーター側でUPnPが許可されていない可能性があります。\r\nあとパブリックネットワーク上で試行されているとたまにエラーになります。");
-    }
     unsafe {
         let _ = SetDlgItemTextW(
             window_handle,
