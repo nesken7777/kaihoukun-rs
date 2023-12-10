@@ -1,7 +1,7 @@
 use std::{mem::transmute, net::Ipv4Addr, ptr::null_mut};
 
 use windows::{
-    core::{Error, BSTR, w, PCWSTR},
+    core::{w, Error, BSTR, PCWSTR},
     Win32::{
         Foundation::VARIANT_TRUE,
         NetworkManagement::WindowsFirewall::{IStaticPortMappingCollection, IUPnPNAT, UPnPNAT},
