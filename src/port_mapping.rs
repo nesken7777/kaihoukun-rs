@@ -42,12 +42,12 @@ pub fn close_port(
 pub fn open_port(
     port_num: u16,
     protocol: &'static str,
-) -> std::result::Result<(), (Error, ErrorKind)> {
+) -> std::result::Result<String, (Error, ErrorKind)> {
     let static_port_mapping_collection = get_static_port_mapping_collection()?;
 
     let ip_str = determine_ip()?;
 
-    unsafe {
+    let static_port_mapping = unsafe {
         static_port_mapping_collection
             .Add(
                 port_num.into(),
@@ -57,13 +57,19 @@ pub fn open_port(
                 VARIANT_TRUE,
                 &BSTR::from("kaihoukun"),
             )
-            .map_err(|add_err| (add_err, ApiE(AddFail)))?;
-    }
+            .map_err(|add_err| (add_err, ApiE(AddFail)))?
+    };
+    let external_ip = unsafe {
+        static_port_mapping
+            .ExternalIPAddress()
+            .unwrap_or(BSTR::from("IPアドレスの取得に失敗しました。"))
+            .to_string()
+    };
     unsafe {
         WSACleanup();
         CoUninitialize();
     }
-    Ok(())
+    Ok(external_ip)
 }
 
 fn get_static_port_mapping_collection(

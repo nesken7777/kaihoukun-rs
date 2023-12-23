@@ -53,11 +53,17 @@ unsafe extern "system" fn dlg_proc(
             command @ (OPEN_PORT | CLOSE_PORT) => match get_dialog_item(window_handle) {
                 Ok((port_num, protocol)) => match command {
                     OPEN_PORT => match open_port(port_num, protocol) {
-                        Ok(_) => {
+                        Ok(external_ip) => {
                             let _ = SetDlgItemTextW(
                                 window_handle,
                                 OUT_TEXT,
-                                w!("ポート開放に成功しました。"),
+                                PCWSTR::from_raw(
+                                    HSTRING::from(format!(
+                                        "ポート開放に成功しました。\r\n外部IPアドレス: {}",
+                                        external_ip
+                                    ))
+                                    .as_ptr(),
+                                ),
                             );
                             1
                         }
