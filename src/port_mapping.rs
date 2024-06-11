@@ -76,6 +76,7 @@ fn get_static_port_mapping_collection(
 ) -> std::result::Result<IStaticPortMappingCollection, (Error, ErrorKind)> {
     unsafe {
         CoInitializeEx(None, COINIT_MULTITHREADED)
+            .ok()
             .map_err(|co_init_err| (co_init_err, ApiE(CoInitializeFail)))?
     };
     let upnp_nat = unsafe {
@@ -106,13 +107,13 @@ fn determine_ip() -> std::result::Result<String, (Error, ErrorKind)> {
     let mut wsa_data = WSADATA::default();
     let wsaresult = unsafe { WSAStartup(0x202, &mut wsa_data) };
     if wsaresult != 0 {
-        return Err((Error::OK, SelfE(WSAStartupFail)));
+        return Err((Error::empty(), SelfE(WSAStartupFail)));
     }
 
     let mut localhost_name = [0u16; 260];
     let gethostname_result = unsafe { GetHostNameW(localhost_name.as_mut_slice()) };
     if gethostname_result != 0 {
-        return Err((Error::OK, SelfE(GetHostNameWFail)));
+        return Err((Error::empty(), SelfE(GetHostNameWFail)));
     }
 
     let hints = ADDRINFOEXW {
@@ -136,7 +137,7 @@ fn determine_ip() -> std::result::Result<String, (Error, ErrorKind)> {
         )
     };
     if wsa_error_code != 0 {
-        return Err((Error::OK, SelfE(GetAddrInfoExWFail)));
+        return Err((Error::empty(), SelfE(GetAddrInfoExWFail)));
     }
 
     let ip_str = {
@@ -163,10 +164,10 @@ fn determine_ip() -> std::result::Result<String, (Error, ErrorKind)> {
                                 Ok(return_str)
                             }
                         }
-                        _ => Err((Error::OK, SelfE(IPNotFound))),
+                        _ => Err((Error::empty(), SelfE(IPNotFound))),
                     }
                 }
-                None => Err((Error::OK, SelfE(IPNotFound))),
+                None => Err((Error::empty(), SelfE(IPNotFound))),
             }
         }
         determine_ip(unsafe { addr_info.as_ref() })
