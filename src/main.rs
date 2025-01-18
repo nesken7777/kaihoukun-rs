@@ -5,15 +5,13 @@ mod dialog;
 mod display_err;
 mod port_mapping;
 
-use consts::{CLOSE_PORT, DIALOG, OPEN_PORT, OUT_TEXT, TCP_CHECKED};
+use consts::{ErrorKind, CLOSE_PORT, DIALOG, OPEN_PORT, OUT_TEXT, TCP_CHECKED};
 use dialog::get_dialog_item;
 use display_err::display_err;
 use port_mapping::{close_port, open_port};
 use windows::{
-    core::*,
-    Win32::{
+    core::{w, Result, HSTRING, PCWSTR}, Win32::{
         Foundation::{HWND, LPARAM, WPARAM},
-        System::LibraryLoader::GetModuleHandleW,
         UI::{
             Controls::{CheckDlgButton, BST_CHECKED},
             WindowsAndMessaging::{
@@ -21,17 +19,16 @@ use windows::{
                 WM_COMMAND, WM_INITDIALOG,
             },
         },
-    },
+    }
 };
 
 fn main() -> Result<()> {
     unsafe {
-        let instance = GetModuleHandleW(None)?;
         DialogBoxParamW(
-            instance,
+            None,
             PCWSTR::from_raw(DIALOG as *const u16),
-            HWND(0),
-            Some(dlg_proc),
+            None,
+            Some(Some(dlg_proc)),
             LPARAM(0),
         );
         Ok(())
@@ -44,50 +41,42 @@ unsafe extern "system" fn dlg_proc(
     wparam: WPARAM,
     _: LPARAM,
 ) -> isize {
+    fn process_command(
+        window_handle: HWND,
+        command: usize,
+    ) -> std::result::Result<(), (windows::core::Error, ErrorKind)> {
+        unsafe {
+            let (port_num, protocol) = get_dialog_item(window_handle)?;
+            match command {
+                OPEN_PORT => {
+                    let external_ip = open_port(port_num, protocol)?;
+                    let _ = SetDlgItemTextW(
+                        window_handle,
+                        OUT_TEXT,
+                        &HSTRING::from(format!(
+                            "ポート開放に成功しました。\r\n外部IPアドレス: {}",
+                            external_ip
+                        )),
+                    );
+                    Ok(())
+                }
+                CLOSE_PORT => {
+                    close_port(port_num, protocol)?;
+                    let _ = SetDlgItemTextW(window_handle, OUT_TEXT, w!("ポートを閉じました。"));
+                    Ok(())
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
     match message {
         WM_INITDIALOG => {
             let _ = CheckDlgButton(window_handle, TCP_CHECKED, BST_CHECKED);
             0
         }
         WM_COMMAND => match wparam.0 & 0xffff {
-            command @ (OPEN_PORT | CLOSE_PORT) => match get_dialog_item(window_handle) {
-                Ok((port_num, protocol)) => match command {
-                    OPEN_PORT => match open_port(port_num, protocol) {
-                        Ok(external_ip) => {
-                            let _ = SetDlgItemTextW(
-                                window_handle,
-                                OUT_TEXT,
-                                PCWSTR::from_raw(
-                                    HSTRING::from(format!(
-                                        "ポート開放に成功しました。\r\n外部IPアドレス: {}",
-                                        external_ip
-                                    ))
-                                    .as_ptr(),
-                                ),
-                            );
-                            1
-                        }
-                        Err((error, kind)) => {
-                            display_err(error, kind, window_handle);
-                            0
-                        }
-                    },
-                    CLOSE_PORT => match close_port(port_num, protocol) {
-                        Ok(_) => {
-                            let _ = SetDlgItemTextW(
-                                window_handle,
-                                OUT_TEXT,
-                                w!("ポートを閉じました。"),
-                            );
-                            1
-                        }
-                        Err((error, kind)) => {
-                            display_err(error, kind, window_handle);
-                            0
-                        }
-                    },
-                    _ => unreachable!(),
-                },
+            command @ (OPEN_PORT | CLOSE_PORT) => match process_command(window_handle, command) {
+                Ok(_) => 1,
                 Err((error, kind)) => {
                     display_err(error, kind, window_handle);
                     0

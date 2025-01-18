@@ -1,7 +1,7 @@
 use windows::{
     core::Error,
     Win32::{
-        Foundation::{BOOL, HWND},
+        Foundation::HWND,
         UI::{Controls::IsDlgButtonChecked, WindowsAndMessaging::GetDlgItemInt},
     },
 };
@@ -13,7 +13,7 @@ use crate::consts::{
 };
 
 pub fn get_dialog_item(hdlg: HWND) -> std::result::Result<(u16, &'static str), (Error, ErrorKind)> {
-    let port_num = unsafe { GetDlgItemInt(hdlg, PORT_NUM_INPUT, None, BOOL::from(false)) };
+    let port_num = unsafe { GetDlgItemInt(hdlg, PORT_NUM_INPUT, None, false) };
     let Ok(port_num) = u16::try_from(port_num) else {
         return Err((Error::empty(), SelfE(InvalidPortNumber)));
     };
