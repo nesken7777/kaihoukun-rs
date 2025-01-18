@@ -10,16 +10,16 @@ use dialog::get_dialog_item;
 use display_err::display_err;
 use port_mapping::{close_port, open_port};
 use windows::{
-    core::{w, Result, HSTRING, PCWSTR}, Win32::{
+    core::{w, Result, HSTRING, PCWSTR},
+    Win32::{
         Foundation::{HWND, LPARAM, WPARAM},
         UI::{
             Controls::{CheckDlgButton, BST_CHECKED},
             WindowsAndMessaging::{
-                DialogBoxParamW, EndDialog, SetDlgItemTextW, IDCANCEL, MESSAGEBOX_RESULT,
-                WM_COMMAND, WM_INITDIALOG,
+                DialogBoxParamW, EndDialog, SetDlgItemTextW, IDCANCEL, MESSAGEBOX_RESULT, WM_COMMAND, WM_INITDIALOG
             },
         },
-    }
+    },
 };
 
 fn main() -> Result<()> {

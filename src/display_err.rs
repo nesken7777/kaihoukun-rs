@@ -5,7 +5,7 @@ use crate::consts::{
     OUT_TEXT,
 };
 use windows::{
-    core::*,
+    core::{w, Error, HRESULT, HSTRING},
     Win32::{Foundation::HWND, UI::WindowsAndMessaging::SetDlgItemTextW},
 };
 
@@ -51,10 +51,6 @@ fn display_err_with_code(error: Error, kind: APICreatedError, window_handle: HWN
         },
     );
     unsafe {
-        let _ = SetDlgItemTextW(
-            window_handle,
-            OUT_TEXT,
-            PCWSTR::from_raw(HSTRING::from(display_string).as_ptr()),
-        );
+        let _ = SetDlgItemTextW(window_handle, OUT_TEXT, &HSTRING::from(display_string));
     }
 }
